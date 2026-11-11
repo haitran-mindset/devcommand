@@ -1,196 +1,531 @@
 # DevCommand
 
-Local-first Electron developer command center. Phases 1–4 implement the application foundation, terminal/process core, workspace management, trusted command execution and Git Manager, following the supplied DevCommand specification and visual reference.
+DevCommand is a desktop application for managing repositories, finding and configuring CLI commands, working with Git and SSH, and using a terminal in the same window.
 
-## Run
+It combines a **GUI and terminal**, stores data locally in SQLite, and does not require a DevCommand account. The primary tested platform is **macOS Apple Silicon**.
 
-Requires Node.js 24+ and npm. Dependencies are locked in `package-lock.json`.
+## Table of contents
+
+- [Requirements](#requirements)
+- [Development](#development)
+- [Building and installing on macOS](#building-and-installing-on-macos)
+- [Getting started](#getting-started)
+- [Features](#features)
+- [Integrated terminal](#integrated-terminal)
+- [Keyboard shortcuts](#keyboard-shortcuts)
+- [Data and security](#data-and-security)
+- [Project architecture](#project-architecture)
+- [Scripts and testing](#scripts-and-testing)
+- [Troubleshooting](#troubleshooting)
+- [Current limitations](#current-limitations)
+
+## Requirements
+
+### Development and builds
+
+- Node.js **24 or later** and npm.
+- macOS to build and test the macOS installer.
+- Git to use repository features and run Git tests.
+- Xcode Command Line Tools if native dependency installation requires a compiler.
+
+Dependencies are pinned in [package-lock.json](./package-lock.json). Use `npm ci` to install from the lockfile.
+
+### Running the application
+
+The packaged `.app` includes its own Electron runtime; Node.js is not required just to open it. Commands that invoke external tools still require the corresponding CLIs on your machine:
+
+| Feature | Required CLI |
+| --- | --- |
+| Repositories and Git Manager | `git` |
+| SSH | `ssh`, `ssh-keygen`, `ssh-add`; a running agent is required to manage identities |
+| Node/npm | `node`, `npm` |
+| Flutter/Dart | `flutter`, `dart` |
+| Ports & Processes | `lsof`, `ps`, `kill` |
+| Permissions on macOS | `ls`, `chmod`, `chown` |
+| ACL on Linux | `getfacl`, `setfacl` |
+| AI Developer CLI | `codex`, `claude`, `gemini`, or `agy` |
+| Cloudflare Tunnel | `cloudflared` and the configuration/account required by the selected action |
+| ngrok | `ngrok` with your existing credentials and configuration |
+
+The app indicates when a CLI is missing or an action is unavailable on the current operating system. DevCommand does not install tools or sign in to provider accounts automatically.
+
+## Development
+
+From the project directory:
 
 ```sh
 npm ci
 npm run dev
 ```
 
-The install workflow rebuilds Electron native dependencies and prepares node-pty's spawn helper. If your host explicitly sets `ELECTRON_RUN_AS_NODE`, unset it when launching desktop tools (`env -u ELECTRON_RUN_AS_NODE npm run dev` on macOS/Linux).
+`npm ci` runs `postinstall` to rebuild native dependencies for Electron and prepare executable permissions for the `node-pty` spawn helper. The development server watches both main/preload and renderer changes.
+
+If your environment defines `ELECTRON_RUN_AS_NODE`, unset it when launching the app:
 
 ```sh
-npm run lint
+env -u ELECTRON_RUN_AS_NODE npm run dev
+```
+
+Run the source checks:
+
+```sh
 npm run typecheck
+npm run lint
 npm test
-npm run build
-npm run test:e2e
-npm run test:e2e:runtime
+```
+
+## Building and installing on macOS
+
+### Create an Apple Silicon `.dmg` installer
+
+```sh
+npm run dist -- --mac --arm64
+```
+
+For the current version, `0.1.0`, the output includes:
+
+```text
+release/
+├── DevCommand-0.1.0-arm64.dmg
+├── DevCommand-0.1.0-arm64.dmg.blockmap
+└── mac-arm64/
+    └── DevCommand.app
+```
+
+To install:
+
+1. Quit any running instance of DevCommand.
+2. Open the `.dmg` in Finder.
+3. Drag **DevCommand** into **Applications**, replacing the previous version if one is installed.
+4. Open the app from **Applications**.
+
+The `.dmg` is directly inside `release/`. Directories such as `Contents/MacOS`, `Frameworks`, and `Resources` are internal parts of the `.app`, not separate installers.
+
+Verify the disk image integrity:
+
+```sh
+hdiutil verify release/DevCommand-0.1.0-arm64.dmg
+```
+
+Artifact names follow the `version` in [package.json](./package.json).
+
+### Create a `.app` for testing
+
+```sh
 npm run pack
 ```
 
-`npm run pack` creates `release/mac-arm64/DevCommand.app` on an Apple Silicon Mac. Certificate signing is disabled for local builds; the app is not notarized or ready for public distribution. Use `npm run dist -- --mac --arm64` to create the macOS Apple Silicon DMG in `release/`. DevCommand uses its purple terminal app icon.
+On an Apple Silicon Mac, the application is created at `release/mac-arm64/DevCommand.app`.
 
-Run both smoke suites against the packaged application:
+| Command | Result |
+| --- | --- |
+| `npm run build` | Compile main/preload/renderer into `out/` |
+| `npm run pack` | Compile and package the application as a `.app` directory |
+| `npm run dist -- --mac --arm64` | Compile, package the `.app`, and create a `.dmg` installer |
+
+### Intel Macs and code signing
+
+You can ask electron-builder to produce an Intel build:
 
 ```sh
-DEVCOMMAND_EXECUTABLE="$PWD/release/mac-arm64/DevCommand.app/Contents/MacOS/DevCommand" npm run test:e2e
-DEVCOMMAND_EXECUTABLE="$PWD/release/mac-arm64/DevCommand.app/Contents/MacOS/DevCommand" npm run test:e2e:runtime
+npm run dist -- --mac --x64
 ```
 
-E2E uses temporary user-data profiles. It covers isolation, IPC validation, navigation, theme/sidebar/dock persistence, real PTY input, multiple tabs, hide/show continuity, Ctrl+C, managed streaming and process cleanup. Screenshots are local ignored artifacts because shell prompts can contain machine/user metadata. Runtime tests need permission to spawn PTYs, enumerate descendant process IDs and terminate their own test children.
+The Intel build has not been verified on Intel hardware. Its native modules and artifacts need separate testing before distribution.
 
-## Use the terminal
+The current configuration sets `mac.identity: null`: the app is **not Developer ID signed or notarized**. If macOS blocks a trusted local build, check **System Settings → Privacy & Security → Open Anyway**. You do not need to disable Gatekeeper system-wide.
 
-Click **+ / New terminal** in the bottom dock. Select an installed shell from the menu before creating a new tab. Sessions begin in the OS home directory; `cd` works normally inside the shell. Each tab owns its shell, ANSI output, input, selection, paste and bounded scrollback. Drag the dock edge or focus it and use arrow keys to resize.
+## Getting started
 
-- Hide/show preserves sessions. Closing a tab terminates its shell and descendant processes.
-- The square button sends Ctrl+C to the active terminal. Keyboard Ctrl+C continues to reach the shell.
-- Cmd+C on macOS, or Ctrl+Shift+C, copies a terminal selection. Standard paste is handled by xterm.
-- App search/settings shortcuts do not intercept terminal keyboard input. Outside the terminal, Cmd/Ctrl+K searches, Cmd/Ctrl+J toggles the dock, and Cmd/Ctrl+, opens settings.
-- Reloading the renderer, closing the window or quitting terminates sessions. Sessions are not restored after restart.
+1. Open **Repositories → Add repository** and select an existing local Git repository.
+2. Choose the active repository using the picker in the header.
+3. Open **Command Explorer**, find a command group, and select an **Action**.
+4. Fill in the parameters, then review the **Command Preview** and working directory.
+5. Choose **Copy**, **Insert**, or **Run Command** as needed.
+6. Star frequently used commands and open **Favorites** to arrange them.
 
-The terminal is a trusted local-user shell with your OS permissions. Commands entered there are not constrained by managed-command safety rules. DevCommand does not log keystrokes, persist terminal output or save terminal command history. Your shell may maintain its normal history and startup behavior independently.
+Commands that do not require a repository can run from your home directory when no repository is selected. Commands requiring a repository or project file validate those prerequisites before execution.
 
-## Managed process core
+## Features
 
-Open **Shell Tools → Process Core** and run `git --version` or `node --version`. These read-only checks use fixed backend command definitions with `spawn`, argument arrays and `shell: false`. The renderer cannot provide executable paths, arguments, cwd or environment variables. Missing CLIs produce a failed result with a useful message.
+### Dashboard
 
-Output is streamed separately for stdout/stderr with execution IDs and monotonic sequence numbers. The panel shows status, duration, exit code/signal, limited output and cancellation while running. CLI checks have a 10-second timeout. The core retains at most 12 executions in memory, caps retained output at 128 Ki characters / 512 chunks per execution, and stops a process after 1 MiB received output. Known token/credential patterns are redacted across stream chunks; oversized lines are omitted. Phase 3 persists redacted managed history as described below.
+- Current repository, branch, and working-tree status.
+- Shortcuts to Command Explorer, Git Manager, and SSH Manager.
+- Favorite groups in their saved order.
+- Recent managed-command activity and access to History.
+- Empty, loading, and error states backed by real data.
 
-The Git Command Explorer is now executable through the Phase 3 library described below. The Shell Tools process checks remain available as a compact diagnostic surface. Dedicated Git/SSH/Docker manager routes identify later phases.
+### Repositories and header
 
-## Architecture and security
+- Add, select, favorite, and remove repositories from the list.
+- Removing an entry **does not delete its local directory**.
+- Inspect the branch, clean/dirty state, conflicts, upstream, and fetch/push remotes.
+- Handle bare repositories, unborn branches, detached HEAD, and missing paths.
+- **Open repository** opens its directory; **Refresh repository** reloads its state.
+
+### Command Explorer
+
+Related commands are grouped into one item; choose an operation using **Action**. Filters support category, risk, and platform. The list search shares its query with the header and matches group names, command names, descriptions, and aliases.
+
+| Action | Behavior |
+| --- | --- |
+| **Configure** | Enter and validate parameters |
+| **Details** | Read the description and consequences |
+| **Examples** | View syntax examples |
+| **Related** | Find related commands through categories and aliases |
+| **Copy** | Copy the concise displayed command |
+| **Insert** | Open a shell and insert the concise command without pressing Enter |
+| **Run Command** | Execute a managed command or open an interactive CLI session |
+
+Preview, Copy, Insert, History, and Process Core use concise Git commands such as:
+
+```sh
+git status --short --branch
+```
+
+Managed execution retains internal safety arguments, including disabling hooks/fsmonitor/pagers and blocking external/file transports. Command Explorer exposes the full command under **Managed execution options** where applicable. Meaningful command arguments, including the `--` separator when needed, are preserved.
+
+Sensitive parameters are masked in previews and cannot be copied or inserted. **Insert** currently requires zsh/bash with bracketed paste; review the draft before pressing Enter yourself. Commands entered directly in a shell are outside managed-execution policy.
+
+### Favorites and drag ordering
+
+Favorites is a tab in Command Explorer, not a separate sidebar menu.
+
+- The list star adds/removes actions in a group; the inspector star applies to the selected action.
+- Partially starred groups still show their saved action count.
+- Drag the dotted grip on the left of a group to place it before or after another group.
+- Focus the grip and use **Alt + ↑/↓** to reorder with the keyboard.
+- The order is stored locally, survives restarts, and also applies to Dashboard Favorites.
+- Reordering a filtered list preserves hidden groups and does not change the Commands tab order.
+
+### Git Manager
+
+Click the entire **Git Manager** sidebar row to expand its submenu; click again to collapse it. All sections use the selected repository:
+
+| Section | Features |
+| --- | --- |
+| **Overview** | File status, staged/unstaged diffs, Stage/Unstage |
+| **Branches** | List, create, switch, rename, and delete merged branches |
+| **Commits** | Paginated commit history and diff inspection by OID |
+| **Remotes** | List, add, rename, change URL, and remove remotes |
+| **Stash** | List, inspect, save tracked changes, apply, pop, and drop |
+| **Config** | Local/global/effective values, scope/source, and editing forms |
+
+Config editing is limited to `user.name`, `user.email`, `core.autocrlf`, `pull.rebase`, and `init.defaultBranch`. Config values are treated as sensitive parameters; config values/output are excluded from Execution History.
+
+Mutating operations require a preview and confirmation. Branch deletion does not use force and protects the current branch, unmerged branches, and branches checked out in another linked worktree. Stash Apply/Pop require a clean working tree; Drop includes a data-loss warning. DevCommand does not currently provide commit creation or a merge-conflict editor.
+
+### SSH Manager and SSH commands
+
+SSH Manager reads public-key metadata, fingerprints, public comments, host aliases, and agent identities.
+
+- Copy public keys without displaying or storing private-key content.
+- Generate a new ed25519 pair with `ssh-keygen`, without automatically overwriting existing keys.
+- Enter passphrases in the terminal, never through argv or the database.
+- Select a key and lifetime with **Add key to agent**.
+- List identities using `ssh-add -l -E sha256`.
+- Remove a selected identity or all identities from the agent.
+- Add/edit/remove host aliases with previews, revision checks, and config backups before writes.
+- Test connections with strict host-key checking, without automatically trusting new or changed host keys.
+
+| Lifetime | `ssh-add` invocation |
+| --- | --- |
+| 10 minutes | `ssh-add -t 600 <private-key>` |
+| 1 hour | `ssh-add -t 3600 <private-key>` |
+| 8 hours | `ssh-add -t 28800 <private-key>` |
+| 24 hours | `ssh-add -t 86400 <private-key>` |
+| No time limit | `ssh-add <private-key>` |
+
+**No time limit** omits a lifetime for that invocation. A key can still expire under an agent-wide default, be removed, or disappear when the agent restarts; this does not guarantee persistence across machine restarts.
+
+The agent is shared by your repositories and applications. Removing an identity may affect authentication for repositories using it; it does not delete key files, edit Git remotes, or change host configuration. These operations run only after confirmation.
+
+**Refresh SSH/Refresh agent** reloads state without creating, adding, or removing keys. Complex host configuration involving Include/Match, wildcards, or IdentityFile paths outside the SSH directory may require manual editing.
+
+Command Explorer also includes SSH Connect, Test authentication, Version/Help, key generation, fingerprints, and agent operations. **SSH Connect** uses your OpenSSH configuration; diagnostic tests use direct parameters, bypass proxy/local commands, and retain strict host-key checking.
+
+### Ports & Processes
+
+Under **System**, the **Ports & Processes** group supports:
+
+- Listing all TCP listening ports.
+- Inspecting a specific TCP port.
+- Finding processes using a TCP/UDP port.
+- Stopping a TCP listener by port, defaulting to `3000`.
+
+Stopping a listener checks its PID and process identity before sending **SIGTERM**, requires confirmation, and does not force-kill it. If multiple processes listen on the port, specify the intended PID. Operating-system permissions may limit which processes can be inspected or stopped.
+
+### Permissions
+
+The **Permissions** category contains two groups:
+
+- **File Permissions:** inspect permissions/owner/group, `chmod`, and `chown`.
+- **File ACL:** inspect, add, remove entries, and clear extended ACLs.
+
+Paths must belong to the selected repository. Operations apply to one path without automatic recursion or `sudo`; unsafe paths are rejected. The backend selects the appropriate macOS/Linux CLI.
+
+### Node, npm, Flutter, and system tools
+
+- Node/npm versions, runtime information, and direct dependencies.
+- `npm ls` uses `--offline --ignore-scripts` and does not run repository package scripts.
+- Flutter version, doctor, devices, and Dart version.
+- Flutter actions require confirmation because the SDK may initialize caches or contact services; analytics are suppressed for each invocation.
+- Working directory, directory listing, and disk usage.
+
+### AI Developer CLI
+
+Each tool has its own group under **AI Developer CLI**:
+
+| Group | Executable | Start | Resume |
+| --- | --- | --- | --- |
+| Codex | `codex` | `codex` | `codex resume --last` |
+| Claude Code | `claude` | `claude` | `claude --continue` |
+| Gemini CLI | `gemini` | `gemini` | `gemini --resume latest` |
+| Antigravity CLI | `agy` | `agy` | `agy --continue` |
+
+Help and Version actions are provided where supported by the command definitions; Antigravity currently has no Version action. Start/Resume open a terminal in the selected repository, require confirmation, and do not submit prompts or enable permission-bypass flags automatically.
+
+Each CLI uses its own accounts, configuration, permissions, and session storage. DevCommand does not record these interactive sessions in Execution History.
+
+### Cloudflare Tunnel
+
+Search for `cloudflared` or open **General → Cloudflare Tunnel**:
+
+| Action | Main command |
+| --- | --- |
+| Quick tunnel | `cloudflared tunnel --url http://localhost:3000` |
+| Run named tunnel | `cloudflared tunnel run <name-or-uuid>` |
+| Login | `cloudflared tunnel login` |
+| Create tunnel | `cloudflared tunnel create <name>` |
+| List tunnels | `cloudflared tunnel list` |
+| Tunnel info | `cloudflared tunnel info <name-or-uuid>` |
+| Version | `cloudflared --version` |
+| Help | `cloudflared tunnel --help` |
+
+Quick Tunnel accepts a local HTTP(S) URL. Named tunnels use your existing `cloudflared` configuration. After confirmation, Login/Create may open authentication or create Cloudflare certificates/credentials.
+
+### ngrok
+
+Search for `ngrok` or open **General → ngrok**:
+
+| Action | Main command |
+| --- | --- |
+| HTTP by port | `ngrok http 3000` |
+| HTTP local URL | `ngrok http http://localhost:3000` |
+| HTTP custom domain | `ngrok http 3000 --url https://example.ngrok.app` |
+| TCP tunnel | `ngrok tcp 5432` |
+| Start named endpoint | `ngrok start <name>` |
+| Start all endpoints | `ngrok start --all` |
+| Check config | `ngrok config check` |
+| Version | `ngrok version` |
+| Help | `ngrok help` |
+
+These actions use your existing ngrok credentials/configuration. Custom domains and some endpoint types depend on account entitlements. DevCommand does not configure an authtoken automatically.
+
+Tunnels run in the terminal. **Ctrl+C** stops the agent and returns to the shell in the same tab. Running a tunnel publishes the service according to the provider's access configuration; review the preview before confirming.
+
+### History and Process Core
+
+**History** stores up to 100 managed runs with status, timing, exit code, and bounded/redacted output. It supports status filtering, **Clear history**, and Review & rerun. Rerun returns the request to a form for revalidation instead of replaying saved argv automatically. Sensitive parameters must be entered again.
+
+**Shell Tools → Process Core** runs `git --version`/`node --version` checks and displays managed executions from the current session. Running commands can be cancelled; Git headings use concise commands.
+
+Terminal input/output is not saved in History. Clearing history does not delete project files or terminal output, or automatically cancel running processes.
+
+## Integrated terminal
+
+The terminal uses `node-pty` and xterm.js, with up to **8 active sessions** per window and **3,000 scrollback lines** per terminal.
+
+| Control | Behavior |
+| --- | --- |
+| Shell picker + **+** | Select an installed shell and create a tab; ordinary shell tabs start in your home directory |
+| Click a tab | Switch sessions and scroll the tab strip to the active tab |
+| Left/right arrows in the tab strip | Scroll the list when many tabs are open |
+| **Ctrl+C** or keyboard icon | Send an interrupt to the foreground process in the active tab |
+| **OctagonX** icon | Stop sessions and close all terminal tabs |
+| **X** on a tab | Stop and close that tab |
+| Expand icon | Change the dock height |
+| **X** in the toolbar | Hide the dock without stopping sessions |
+
+The tab strip is separate from the toolbar so additional sessions do not displace controls. Resize the dock by dragging its top edge or focusing the separator and pressing ↑/↓. The interface supports light/dark/system themes, themed scrollbars, a default window size of **1280×820**, and a minimum of **900×650**.
+
+Ordinary interactive CLI sessions launched from Command Explorer, including tunnels, AI CLIs, and SSH Connect, run inside a shell: after the command finishes or receives Ctrl+C, you can enter another command in the same tab. Specialized SSH key/agent operations still use dedicated PTYs and may end their session when the tool finishes. Programs that handle or ignore Ctrl+C may continue running; use OctagonX or close the tab to terminate the session.
+
+Closing the window, reloading the renderer, or quitting the app terminates its managed terminal sessions. Terminals are not restored after restart. Your shell may read startup files and maintain its own history independently.
+
+## Keyboard shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| `Cmd/Ctrl + K` | Command palette |
+| `Cmd/Ctrl + P` | Repositories |
+| `Cmd/Ctrl + J` | Toggle terminal dock |
+| `Cmd/Ctrl + ,` | Settings |
+| `Cmd/Ctrl + Enter` | Request execution/review of the configured command |
+| `Ctrl + C` in the terminal | Interrupt the foreground process |
+| `Cmd + C` on macOS | Copy the terminal selection |
+| `Ctrl + Shift + C` | Copy the terminal selection |
+| `Alt + ↑/↓` on a Favorites grip | Reorder groups |
+| `Esc` in Search commands | Clear the list search query |
+
+App shortcuts do not intercept keys while terminal input has focus. Selects and dialogs handle keyboard events separately to avoid executing commands behind a popup.
+
+## Data and security
+
+### Local data
+
+SQLite is stored at `app.getPath('userData')/devcommand.sqlite`. The `userData` location depends on the runtime environment; use `--user-data-dir` for isolated tests.
+
+Stored locally:
+
+- Theme, last page, sidebar state, and dock preferences.
+- Repository entries and the selected repository.
+- Command Favorites and group order.
+- Bounded/redacted managed-execution history.
+
+Private-key content, passphrases, terminal keystrokes, and full terminal output are not stored. The app has no separate account or telemetry; CLIs you run may still access the network and follow their own data policies.
+
+The database uses migrations and is not silently reset when corrupted. Migration v4 removes data from a retired experimental module and redirects its old page to Command Explorer while preserving other data. Quit the app before manually backing up or modifying the database; there is no database backup/export UI yet.
+
+### Execution and confirmation
+
+- Renderer Node integration is disabled; context isolation and sandboxing are enabled.
+- Preload exposes only allowlisted APIs; main validates the sender, frame, and payload using Zod.
+- Managed commands use backend-owned executable/argument arrays with `shell: false`.
+- Every mutating managed action requires a one-use confirmation token that expires after 60 seconds and is bound to the relevant request/state.
+- The backend rechecks the appropriate repository, refs, configuration, process, or metadata before execution.
+- The managed runner allows up to 4 concurrent processes, with a normal timeout of 10 seconds or 60 seconds for network commands.
+- Retained output is capped at 128 Ki characters/512 chunks per execution; a process is stopped after more than 1 MiB is received. Known credential patterns are redacted before persistence.
+- Runtime retains up to 12 execution records; persistent history retains up to 100 records.
+- Native clipboard integration supports copying in packaged Electron builds.
+
+**The terminal is your local-user shell**, with ordinary operating-system permissions. It is not restricted by the managed-command allowlist. Process-tree termination is best effort; deliberately detached/reparented processes may escape cleanup. External tools can still change state after the final validation.
+
+## Project architecture
+
+| Component | Technology |
+| --- | --- |
+| Desktop and packaging | Electron, electron-vite, electron-builder |
+| Interface | React, TypeScript, Tailwind CSS, shadcn/ui on Radix, Lucide |
+| State/data fetching | Zustand, TanStack Query, React Router |
+| Database | better-sqlite3, Drizzle ORM |
+| Terminal | node-pty, xterm.js |
+| Contracts | Zod, typed preload/IPC |
+| Testing | Vitest, Playwright Electron |
 
 ```text
-src/main/                         Electron lifecycle, IPC and security
-src/main/services/terminal/       Shell allowlist and PTY sessions
-src/main/services/execution/      Managed runner and redaction
-src/main/infrastructure/process/  OS process-tree termination adapter
-src/main/infrastructure/database/ SQLite migration and Drizzle settings
-src/preload/                      Allowlisted contextBridge API
-src/shared/                       Zod contracts and Unicode-safe transport
-src/renderer/src/features/        Terminal and managed-process UI
-scripts/                          Native helper preparation and packaging hook
-tests/                            Unit, native integration and Electron E2E
+src/
+├── main/
+│   ├── index.ts                  # Lifecycle, window, and cleanup
+│   ├── ipc/                      # Authorized, payload-validated handlers
+│   ├── security/                 # Sender validation and public errors
+│   ├── infrastructure/
+│   │   ├── database/             # SQLite schema/store/migrations
+│   │   └── process/              # Process-tree termination
+│   └── services/
+│       ├── cli/                  # CLI discovery and bounded probes
+│       ├── commands/             # Registry, policy, ports, permissions
+│       ├── execution/            # Managed runner and redaction
+│       ├── git/                  # Git reads, parsing, and watcher
+│       ├── ssh/                  # Public metadata, config, agent actions
+│       └── terminal/             # Shell discovery and PTY sessions
+├── preload/                      # contextBridge allowlist
+├── shared/                       # DTOs, Zod contracts, command groups
+└── renderer/src/
+    ├── components/ui/            # Shared shadcn/ui compositions
+    ├── features/                 # Dashboard, commands, Git, SSH, terminal...
+    ├── lib/                      # Queries, settings, session, clipboard
+    └── App.tsx                   # Shell, sidebar, and routing
+scripts/                          # Native helper/icon/packaging hooks
+resources/                        # Application icons and assets
+tests/                            # Unit/integration and Electron E2E
+docs/superpowers/plans/            # Relevant implementation plans
 ```
 
-Renderer Node integration is disabled; context isolation and sandbox are enabled. IPC checks window identity, main frame, exact renderer URL and strict payload schemas. Event subscriptions strip Electron event objects and return unsubscribe functions. Runtime services are scoped to the owning window. Popups, navigation, webviews and permissions are denied. Production CSP blocks external connections; development permits only the local Vite WebSocket.
+Docker no longer appears in the sidebar. Some compatibility backend/UI code and Docker tests remain in the source; it is not a module exposed through the current sidebar flow. Workflows has been removed from the app.
 
-PTY output uses acknowledgements and native pause/resume backpressure. There are at most 8 live sessions per window and 3,000 scrollback lines per terminal. Transport chunks preserve Unicode surrogate pairs. Closing/quit waits for process cleanup, including TERM-to-KILL escalation; Unix process-tree enumeration handles foreground/background shell jobs. Processes that deliberately detach/reparent themselves can escape best-effort tree cleanup; this is not an OS process sandbox.
+## Scripts and testing
 
-Settings remain in `app.getPath('userData')/devcommand.sqlite`. `--user-data-dir` overrides that location for isolated tests. Corrupt settings produce an error without a silent reset. Back up the database before manual recovery. Logging is bounded and excludes input, environment, terminal output and raw exceptions.
+### Main scripts
 
-Native `.node` libraries and node-pty resources are unpacked from ASAR. The packaging hook ensures `spawn-helper` is executable; this addresses the missing execute bit in node-pty 1.1.0 prebuilds without patching vendor source.
+| Script | Purpose |
+| --- | --- |
+| `npm run dev` | Run the development app |
+| `npm run build` | Build production output into `out/` |
+| `npm start` | Preview the production build |
+| `npm run typecheck` | Run TypeScript checks |
+| `npm run lint` | Run ESLint |
+| `npm test` | Run unit/integration tests |
+| `npm run pack` | Package the application as a directory |
+| `npm run dist -- --mac --arm64` | Create the macOS Apple Silicon DMG |
+| `npm run icon` | Regenerate icons using the project script |
 
-## Validation limits
+### Electron E2E
 
-macOS ARM64 is the primary tested platform. Windows has a shell/ConPTY and taskkill adapter, and Linux uses the Unix adapter, but neither is verified. Intel macOS, release signing/notarization and installers need separate validation. Split panes, configurable default cwd and database backup/export UI are not included.
-
-References: [Electron security](https://www.electronjs.org/docs/latest/tutorial/security), [node-pty](https://github.com/microsoft/node-pty), [xterm.js](https://xtermjs.org/docs/).
-
-## Phase 3 — Workspaces & command execution
-
-**Workspaces** adds existing repositories through the native folder picker. Entries support selection, favorites and removal from the list without deleting local files. Git context detects canonical roots, clean/dirty state, detached/unborn branches, bare repositories, conflicts, upstream and fetch/push URLs. It refreshes after managed executions, on focus and every five seconds while active. Missing or replaced paths require adding the repository again.
-
-The **Command Library** contains 35 trusted Git/general commands with dynamic forms, category/risk/platform filters, aliases, favorites, keyboard command palette and backend-validated previews. Cmd/Ctrl+K opens the palette; Cmd/Ctrl+P opens workspaces; Cmd/Ctrl+Enter requests execution in the command builder. Terminal input retains its control keys.
-
-Every mutating managed command requires a fresh explicit confirmation, including caution operations. Tokens are one-time, expire after 60 seconds and bind the request, workspace, refs, local config, porcelain state, index diff, worktree binary diff and relevant global setting. State is checked before/after preview and immediately before execution. Per-workspace operations and global config updates are serialized. Concurrent external tools can still change files after the final check; DevCommand is not a filesystem transaction or process sandbox.
-
-Preview includes the actual Git safety arguments: hooks, fsmonitor, interactive paging and external/file transports are disabled. Remote URLs accept credential-free HTTPS/SSH only. Config changes support a limited allowlist of settings, preventing arbitrary Git command hooks or credential-helper configuration through the form. Config values are treated as sensitive: previews redact them, copy/insert is disabled for them, and config output/values are omitted from persistent history. Network operations require confirmation and use a 60-second timeout; SSH host key verification is retained.
-
-**Insert** opens a fresh repository shell and inserts a POSIX-quoted draft using bracketed paste after the prompt enables it. It clears the fresh input line and never sends Enter. This currently requires an installed zsh/bash with bracketed paste enabled; Windows insertion is explicitly unavailable. Review the draft, then press Enter yourself. Interactive execution is not recorded as a managed run.
-
-**History** stores at most 100 managed runs, retaining bounded redacted output, exit status and request metadata. Rerun selects the original workspace and opens a new preview/confirmation; it never executes saved argv. Sensitive parameters must be re-entered. Interrupted runs are marked cancelled when the database reopens. A history write failure is reported without losing track of an already started process.
-
-SQLite migration version 2 preserves existing preferences and adds workspace/favorite/history storage. Workspace paths and non-sensitive request metadata are local user data; the application does not transmit them to new services. General commands run in the selected repository or home directory. SHA/branch and remote names use conservative validation; arbitrary custom commands, local-file remotes, external editors and clone UI are not included.
-
-Run the Phase 3 Electron journey against source or packaged builds:
+Build before running E2E tests from source:
 
 ```sh
+npm run build
+npm run test:e2e
+npm run test:e2e:runtime
 npm run test:e2e:workspace
-DEVCOMMAND_EXECUTABLE="$PWD/release/mac-arm64/DevCommand.app/Contents/MacOS/DevCommand" npm run test:e2e:workspace
-```
-
-The test uses temporary Git repositories and stubs only the native picker's selected path from privileged test code. It verifies the real renderer/preload/IPC/services/database chain for remote URL changes, confirmation, persistence, rerun and insert-without-Enter. Unit/integration tests cover expired/reused/mismatched/stale tokens, staged-to-unstaged transitions, each destructive built-in, injection/credential rejection and migration. No project Git state is mutated by those tests.
-
-The installed Playwright build's `waitForFunction` does not poll asynchronous predicates correctly; the E2E IPC wait helper therefore awaits repeated evaluations explicitly.
-
-**Limits:** Repository probes and confirmation diffs have a 512 Ki-character / five-second bound; unusually large/slow repositories can be refused for safety. External process races, unusual shell startup scripts, credential helpers, network authentication and Windows/Linux/Intel macOS need separate validation. Phase 4 Git Manager and Phase 5 SSH/Docker packs are implemented below.
-
-## Phase 4 — Git Manager
-
-Open **Git Manager** in the sidebar. Existing **Git Config** and **Git Remote** links open the corresponding manager tabs, preserving saved navigation. The six keyboard-accessible tabs share the currently selected workspace:
-
-- **Overview:** file-level index/worktree status, rename sources, conflicts, staged/unstaged diffs and confirmed Stage/Unstage actions. Staging does not create a commit. Unstage preserves working-tree content, including before the first commit and for both halves of a staged rename.
-- **Config:** local/global/effective values and source/scope for the five supported config keys. Edits use the existing safe key allowlist, sensitive-value policy and confirmation. Boolean/rebase/default-branch values have contextual validation.
-- **Remotes:** fetch/push URLs, add, rename, change fetch URL and remove. Explicit push URLs remain unchanged when updating the fetch URL. Removing a remote does not delete the server repository.
-- **Branches:** local branches, current branch, upstream, merged state and linked-worktree paths. Create/switch/rename and merged-only deletion use managed confirmations. Current, unmerged or checked-out-in-another-worktree branches are protected; force deletion is unavailable.
-- **Commits:** 50 commits per page, up to offset 10,000, with author/date/subject and immutable-OID commit inspection. No commit creation, rebase or cherry-pick is implemented.
-- **Stash:** inspect, save tracked changes, apply, pop and drop. Apply/Pop require a clean working tree. Pop drops only after success; on conflict Git retains the stash. Drop is destructive and requires explicit confirmation. The list shows the latest 50 entries.
-
-All writes reuse Phase 3 preview, one-time expiring tokens, process output/cancellation and redacted history. Stash row actions include the displayed OID; a positional stash reference that changed before preview is refused. Token state also includes the selected stash OID to detect older-entry shifts that do not change `refs/stash`. Linked worktrees sharing a common Git directory share the managed-operation resource lock.
-
-File operations accept only changed repository-relative paths. Git's global `--literal-pathspecs` prevents names such as `:(glob)*` from becoming wildcard instructions. Paths with traversal, control characters or backslashes are refused for managed file operations. Untracked file bodies are not read directly for previews; stage first to inspect the indexed diff. Path metadata binds untracked-file staging confirmations. Raw diff/index output preserves trailing whitespace when computing state fingerprints.
-
-Diff readers disable external drivers, text conversion, signatures and color. Read responses are local UI data, not execution-history records; they use existing known-pattern redaction. Large/slow reads retain the 512 Ki-character / five-second probe limit and display an error instead of a partial result. Bare/unborn/detached/missing-path and conflict states have explicit UI messages.
-
-While the manager is used, filesystem notifications are debounced by 180 ms and watchers are cleaned up on reload/window shutdown. macOS/Windows use recursive watching; other platforms use root/metadata watches plus five-second polling and focus refresh. Open diffs have their own polling/focus refresh, and **Refresh Git** refreshes both snapshots and diffs. Watcher failures fall back to polling. No OS-level transaction is claimed against concurrent external Git commands.
-
-```sh
 npm run test:e2e:git
-DEVCOMMAND_EXECUTABLE="$PWD/release/mac-arm64/DevCommand.app/Contents/MacOS/DevCommand" npm run test:e2e:git
-```
-
-The Git Manager test uses only temporary repositories and fixture commits. It checks GUI/CLI parity for stage/unstage/diff/config/remotes/branches/commits/stash, cancel-before-confirm, explicit dangerous warnings, refresh and real conflict UI. Native picker selection is stubbed only in privileged test code. Unit/integration coverage includes literal Unicode/magic paths, unborn staging, unmerged/linked-worktree protection, rename unstage, commit paging, stale stash identity, whitespace-sensitive fingerprints and watcher debounce/cleanup.
-
-**Verified target:** macOS ARM64 with Git 2.55.0. Windows/Linux/Intel macOS, unusual Git versions and release signing/notarization remain unverified. Merge resolution is manual; Stage marks a conflicted file resolved in the index and does not remove conflict markers. Phase 5 SSH/Docker management is described below.
-
-
-## Phase 5 — SSH & Extended CLI
-
-**SSH Manager** lists regular public `.pub` files, fingerprints, public comments and OS agent identities. Public copy excludes private key content. Application code opens only public keys and SSH config; private key availability is checked using filesystem metadata. Public discovery is limited to 100 keys, 16 KiB per key and a 256 KiB config. Symlinked metadata, unsafe directories and unsupported key formats are refused.
-
-Ed25519 generation and one-hour agent loading run the installed `ssh-keygen`/`ssh-add` directly in a PTY. Passphrases are typed interactively, never provided through argv or stored in the database. Key names are reserved while generation runs; existing names are refused. Generation completion refreshes public metadata. No private-key deletion or automatic overwrite is exposed.
-
-Literal Host aliases support add/edit/remove through a reviewed, one-time 60-second confirmation bound to config revision and metadata. Existing configs receive a `0600` backup before atomic replacement; comments and unknown directives outside edited fields are retained. Include/Match, wildcard/multiple-pattern hosts, duplicate aliases/directives and external IdentityFile paths require manual editing. SSH config is not a full semantic editor. Concurrent external edits after the final check remain possible.
-
-Connection diagnostics use explicit host/user/port and an optional identity from this SSH directory, bypass custom config (`-F /dev/null`), proxy/local commands and forwarding, and enforce batch authentication plus strict host-key checking. Unknown or changed hosts are refused; verify their fingerprints through your normal trusted process outside DevCommand. Diagnostics never accept new host keys automatically. Git hosting services may exit nonzero after authentication; read output rather than interpreting the exit code alone. Diagnostic output remains in memory and is not saved to history.
-
-**Docker Manager** detects CLI/daemon availability and shows selected context/endpoint, daemon identity, containers, images, volumes and networks. Reads are bounded to 1 MiB/five seconds per probe. Credentials in endpoint URLs are refused; inspect environment/config secrets are not returned to the renderer. Refresh is explicit and follows completed actions.
-
-Start/stop/restart, stopped-container removal, image removal, unused-volume deletion, empty custom-network removal and logs all use backend-owned argv, managed streaming/cancellation and one-time confirmations bound to context/daemon/resource state. Full immutable container/image/network IDs are required. No force/prune operation is exposed. Volume deletion checks references and explicitly warns of permanent data loss. Logs show the last 200 lines; follow stops after 60 seconds or Cancel. Docker operations and diagnostic output are deliberately ephemeral rather than persisted as rerunnable history.
-
-Compose up/down use the selected Git workspace, exactly one standard Compose filename, and an explicit preview. Confirmation binds the root file, `.env` and effective `compose config --format json` output, including resolved includes/extends/env_file and interpolation. Effective config may contain local environment values: it is hashed in main only, never returned or persisted. Configs/secrets file references are currently refused because their content is not bound. Up disables builds and image pulls; down preserves named volumes but removes containers and their writable layers. These operations require a trusted repository and Docker Compose V2 with JSON config output. Repository-defined services can use bind mounts, privileges and networks.
-
-The library now contains **44 built-ins**. New Node commands show npm/runtime versions and direct dependencies (`npm ls --offline --ignore-scripts`, requires `package.json`). Flutter commands show version, doctor and devices with per-invocation `--suppress-analytics`; they require confirmation because the SDK can initialize caches, contact services or prompt for OS permissions. Dart version, disk usage and numeric TCP-port inspection complete the packs. Arbitrary package scripts, JavaScript input and process killing are not exposed. Missing tools show a reason and disable execution; nothing installs tools automatically.
-
-```sh
 npm run test:e2e:extended
-DEVCOMMAND_EXECUTABLE="$PWD/release/mac-arm64/DevCommand.app/Contents/MacOS/DevCommand" npm run test:e2e:extended
+npm run test:e2e:command-packs
+npm run test:e2e:ports
+npm run test:e2e:favorites
+npm run test:e2e:ui
 ```
 
-**Verified:** macOS ARM64, 57 unit/native tests, lint/typecheck/build/pack, and all five Electron journeys against both build output and the packaged `.app`. The extended journey uses real `ssh-keygen` in a temporary directory, fixture-only SSH network/agent/Docker programs and an isolated profile. Source tests use a test-only home lookup startup hook; packaged macOS tests use Playwright's privileged main-process channel and recreate the window after startup. Both assert isolation before SSH requests. Neither fixture mechanism is shipped in the application. No real user keys, OS-agent identities, Docker resources or remote hosts are modified by the tests.
+| Suite | Coverage |
+| --- | --- |
+| `test:e2e` | Isolation, IPC, navigation, themes, and settings persistence |
+| `test:e2e:runtime` | PTYs, multiple tabs, Ctrl+C, session closing, and process cleanup |
+| `test:e2e:workspace` | Repository picker, preview/confirm/run, history, and insertion |
+| `test:e2e:git` | Git Manager against temporary repositories |
+| `test:e2e:extended` | SSH metadata/keygen/config, fake agent/network, and extended CLIs |
+| `test:e2e:command-packs` | Permissions, fake AI/Cloudflare/ngrok CLIs, and shell continuity after Ctrl+C |
+| `test:e2e:ports` | Port inspection and fixture-listener termination |
+| `test:e2e:favorites` | Drag/drop, keyboard ordering, filters, Dashboard, and restart persistence |
+| `test:e2e:ui` | Responsive layouts, dropdowns, Dashboard, sidebar, dock, and keyboard behavior |
 
-**Limits:** Real SSH network authentication/agent integration, live Docker/Compose engines and Flutter SDK/device operations were not exercised. Docker policy/Compose-state checks use fixture transports. Windows/Linux/Intel macOS remain unverified; SSH writes are disabled on Windows pending ACL validation, and npm/Flutter wrapper packs are limited to macOS/Linux. The macOS app is unsigned/unnotarized; Intel macOS remains unverified.
-
-
-## Command Center interface refresh
-
-The desktop shell follows the updated reference: persistent top search, compact sidebar with Git subnavigation, repository context bar and a three-column Command Explorer. The right rail shows real repository metadata, configuration-only quick actions and recent managed history. Terminal tabs share their toolbar; recent task status sits beside the dock on wide displays. No mock activity, storage-usage figures or inactive AI/templates/tools were added.
-
-Navigation now labels the command library **Command Explorer**, workspaces **Repositories**, and starred commands **Favorites**. Existing route URLs and backend APIs are unchanged. The right rail/tasks collapse at 1180px and below, and the sidebar collapses to icons below 1050px; every repository/action remains reachable through existing pages. Git previews show the main operation first, with full managed execution options available in an expandable section. Copy, confirmation and execution retain the exact backend preview/arguments.
+Run the same suites against a packaged application:
 
 ```sh
-npm run test:e2e:ui
 DEVCOMMAND_EXECUTABLE="$PWD/release/mac-arm64/DevCommand.app/Contents/MacOS/DevCommand" npm run test:e2e:ui
+DEVCOMMAND_EXECUTABLE="$PWD/release/mac-arm64/DevCommand.app/Contents/MacOS/DevCommand" npm run test:e2e:favorites
 ```
 
-The fixture journey covers real context/activity, nonexecuting quick actions, favorites, palette/filter reset, modal shortcut isolation, switching repository targets, terminal rendering, Git submenu links, keyboard help, light/dark and 1672/1440/1280/1180/900px layouts. Screenshots remain local ignored artifacts. Desktop verification targets macOS ARM64; the existing platform/signing limits still apply.
+Replace the final script name to run another E2E suite. Run Electron UI suites **sequentially** to avoid keyboard-focus contention. Tests use temporary profiles/repositories and fake CLIs where appropriate; mutation tests do not use your real SSH agent or cloud accounts.
 
+Screenshots are written to `resources/screenshots/` and ignored by Git because they may include machine names or paths. `node_modules/`, `out/`, `release/`, and `coverage/` are also excluded from commits.
 
-All visible selection controls use the official shadcn/ui Radix Select: command filters/parameters, Git operation fields, SSH identity, history status, runtime command and terminal shell. A shared composition preserves domain values (including the empty default/agent SSH identity), accessible labels and required/disabled states. Native-select CSS no longer overrides triggers; popup surfaces use theme tokens and render outside scrolling panels. Cmd/Ctrl+Enter ignores events originating in Select, even if selection closes the popup before the page keyboard handler runs.
+## Troubleshooting
 
+| Symptom | What to check |
+| --- | --- |
+| Only `Contents/MacOS` is visible, with no `.dmg` | You are inside the `.app`; run `npm run dist -- --mac --arm64` and look directly in `release/` |
+| The app still shows an older version | Quit it, replace the copy in Applications, and reopen it from Applications |
+| Native modules/PTY fail after changing Node/Electron | Check Node 24+ and rerun `npm ci` to rebuild native dependencies; install Xcode Command Line Tools if a compiler is missing |
+| The Dock shows Electron in development mode | Use the packaged `DevCommand.app` to check release branding |
+| A CLI works in an external terminal but is missing in the app | Check the executable is on the app's search PATH; common locations such as Homebrew and `~/.local/bin` are added. Shell aliases/functions do not replace managed-command executables |
+| Main/preload changes are not taking effect | Restart the app/development process to load the new preload/API |
+| SSH agent unavailable | Check your OS agent and `SSH_AUTH_SOCK`, then refresh SSH/agent state |
+| SSH test returns nonzero | Read the output; Git providers may authenticate successfully without offering a shell |
+| Copy/Insert is disabled | Check validation, CLI availability, repository selection, and sensitive parameters |
+| Ctrl+C only prints `[Session exited · code ...]` in an old session | That session has ended or uses a specialized tool PTY; create a new CLI session using the current app |
+| History/database cannot be read | Check permissions and disk space; back up data before manual recovery instead of deleting the database to experiment |
 
-The desktop document/root are bounded to the viewport and suppress document overscroll. Main content, sidebar navigation, command lists, details and Settings retain their own scroll boundaries; Radix popups still use body portals. The isolated SSH journey checks repeated wheel scrolling to the pane boundary plus shell selection without moving document/header/footer bounds. Synthetic wheel tests do not validate physical macOS trackpad elastic gestures.
+## Current limitations
 
+- macOS ARM64 is the primary tested platform. Intel macOS, Windows, and Linux have not received equivalent validation.
+- Signing/notarization and public release distribution are not configured.
+- CLI availability, OS permissions, shell setup, agents, and provider accounts affect actual behavior.
+- Tunnel/AI/network/agent tests use fixtures and do not prove compatibility with every live account or SSH server.
+- Managed Git does not provide force push, unmerged-branch deletion, rebase/cherry-pick, or a conflict editor.
+- Custom shell-script registration, split terminal panes, and a database backup/export UI are not implemented.
+- Insert currently supports zsh/bash on POSIX only; some CLI packs and SSH writes have additional platform restrictions.
+- Commands entered directly in the terminal do not run inside an application-level command sandbox.
 
-## Compact desktop density
-
-The default window is 1280×820 (minimum remains 900×650). Typography, icons, row heights, section spacing and corner sizes are reduced throughout the shell, managers, Settings, dialogs and shadcn controls; already-small metadata stays readable. Terminal text uses 12px. This uses authored CSS/rem sizing, not browser zoom or a scaled viewport, so scroll ownership and popup placement remain intact.
-
-The compact default retains the repository rail and Running Tasks; task history scrolls within the terminal row rather than increasing its height. Narrow inspector footers retain the risk badge and full confirmation details while removing repeated helper copy. E2E checks window defaults, dock/sidebar/CTA bounds, dropdowns, Settings scrolling, keyboard access and responsive layouts.
+Revisit these limitations and validation results when adding platforms or tools; macOS results alone do not establish cross-platform support.

@@ -70,6 +70,16 @@ export function openSettingsStore(path: string) {
     })()
     const favoriteWorkspace = (id: string, favorite: boolean) => db.update(workspaces).set({ favorite: String(favorite) }).where(eq(workspaces.id, id)).run()
     const favorites = (): string[] => db.select().from(commandFavorites).all().map((row) => row.commandId)
+    const favoriteOrder = (): string[] => {
+      const row = db.select().from(appSettings).where(eq(appSettings.key, 'favorite-group-order')).get()
+      if (!row) return []
+      const value: unknown = JSON.parse(row.value)
+      if (!Array.isArray(value) || value.length > 200 || !value.every((id) => typeof id === 'string' && id.length <= 80) || new Set(value).size !== value.length) throw new Error('Invalid saved favorite order')
+      return value as string[]
+    }
+    const setFavoriteOrder = (ids: string[]) => {
+      db.insert(appSettings).values({ key: 'favorite-group-order', value: JSON.stringify(ids) }).onConflictDoUpdate({ target: appSettings.key, set: { value: JSON.stringify(ids) } }).run()
+    }
     const favoriteCommand = (commandId: string, favorite: boolean) => {
       if (favorite) db.insert(commandFavorites).values({ commandId }).onConflictDoNothing().run()
       else db.delete(commandFavorites).where(eq(commandFavorites.commandId, commandId)).run()
@@ -83,7 +93,7 @@ export function openSettingsStore(path: string) {
     })()
     // Recover interrupted runs after a crash without pretending they completed.
     for (const entry of history()) if (entry.execution.status === 'running') saveHistory({ ...entry, execution: { ...entry.execution, status: 'cancelled', finishedAt: new Date().toISOString(), error: 'Application closed before completion.' } })
-    return { get, update, listWorkspaces, selectedWorkspace, selectWorkspace, addWorkspace, removeWorkspace, favoriteWorkspace, favorites, favoriteCommand, history, clearHistory, saveHistory, close: () => sqlite.close() }
+    return { get, update, listWorkspaces, selectedWorkspace, selectWorkspace, addWorkspace, removeWorkspace, favoriteWorkspace, favorites, favoriteOrder, setFavoriteOrder, favoriteCommand, history, clearHistory, saveHistory, close: () => sqlite.close() }
   } catch (error) {
     sqlite.close()
     throw error

@@ -1,3 +1,4 @@
+import { groupCommands } from '../src/shared/command-groups'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -193,4 +194,41 @@ it('clears saved history without cancelling active runs or restoring cleared ent
     f.commands.clearHistory()
     expect(f.commands.history()).toHaveLength(0)
   } finally { await f.close() }
+})
+
+describe('favorite group order', () => {
+  it('moves complete groups, preserves hidden groups and leaves Commands order unchanged', async () => {
+    const f = fixture()
+    const query = { query: '', category: 'all' as const, risk: 'all' as const, platform: 'all' as const, favoritesOnly: true }
+    try {
+      for (const id of ['git.remote.list', 'git.remote.add', 'git.status', 'ngrok.http']) f.commands.favorite(id, true)
+      const original = f.commands.search({ ...query, favoritesOnly: false }).map((command) => command.id)
+      const groups = () => groupCommands(f.commands.search(query)).map((group) => group.id)
+      expect(groups()).toEqual(['git.remotes', 'git.changes', 'ngrok'])
+      f.commands.moveFavorite({ sourceId: 'ngrok', targetId: 'git.remotes', placement: 'before' })
+      expect(groups()).toEqual(['ngrok', 'git.remotes', 'git.changes'])
+      f.commands.moveFavorite({ sourceId: 'ngrok', targetId: 'git.remotes', placement: 'after' })
+      expect(groups()).toEqual(['git.remotes', 'ngrok', 'git.changes'])
+      f.commands.moveFavorite({ sourceId: 'git.changes', targetId: 'git.remotes', placement: 'before' })
+      expect(groups()).toEqual(['git.changes', 'git.remotes', 'ngrok'])
+      expect(groupCommands(f.commands.search({ ...query, category: 'Git' })).map((group) => group.id)).toEqual(['git.changes', 'git.remotes'])
+      expect(f.commands.search(query).filter((command) => command.id.startsWith('git.remote.')).map((command) => command.id)).toEqual(['git.remote.add', 'git.remote.list'])
+      expect(f.commands.search({ ...query, favoritesOnly: false }).map((command) => command.id)).toEqual(original)
+      expect(new Set(f.store.favorites()).size).toBe(4)
+      const reopened = openSettingsStore(join(f.root, 'app.sqlite'))
+      try { expect(reopened.favoriteOrder()).toEqual(['git.changes', 'git.remotes', 'ngrok']) } finally { reopened.close() }
+    } finally { await f.close() }
+  })
+  it('rejects stale/nonfavorite groups and malformed payloads without changing saved order', async () => {
+    const f = fixture()
+    try {
+      f.commands.favorite('git.status', true); f.commands.favorite('ngrok.http', true)
+      f.commands.moveFavorite({ sourceId: 'ngrok', targetId: 'git.changes', placement: 'before' })
+      const before = f.store.favoriteOrder()
+      for (const payload of [{ sourceId: 'not-a-group', targetId: 'ngrok', placement: 'after' }, { sourceId: 'git.remotes', targetId: 'ngrok', placement: 'before' }, { sourceId: 'ngrok', targetId: 'git.changes', placement: 'invalid' }, { sourceId: 'ngrok', targetId: 'git.changes', placement: 'before', extra: true }]) expect(() => f.commands.moveFavorite(payload)).toThrow()
+      expect(f.store.favoriteOrder()).toEqual(before)
+      f.commands.favorite('ngrok.http', false)
+      expect(() => f.commands.moveFavorite({ sourceId: 'ngrok', targetId: 'git.changes', placement: 'before' })).toThrow()
+    } finally { await f.close() }
+  })
 })

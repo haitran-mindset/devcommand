@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path'
 import { GitService, validateGitPath } from '../git/service'
 import { homedir } from 'node:os'
 import type { CommandPreview, CommandRequest, CommandSummary, HistoryEntry, SearchRequest } from '../../../shared/commands'
-import { commandRequestSchema, searchSchema } from '../../../shared/commands'
+import { commandRequestSchema, searchSchema, favoriteMoveSchema } from '../../../shared/commands'
 import type { ExecutionSnapshot } from '../../../shared/runtime'
 import type { SettingsStore } from '../../infrastructure/database/store'
 import { PublicError, WorkspaceService, gitSafetyArgs, gitProbe } from '../workspace/service'
@@ -33,8 +33,26 @@ export class CommandService {
     const request = searchSchema.parse(input)
     const favorites = this.store.favorites()
     const terms = request.query.toLowerCase().trim().split(/\s+/).filter(Boolean)
-    return registry.filter((definition) => terms.every((term) => `${commandFamily(definition).title} ${definition.title} ${definition.description} ${definition.category} ${definition.aliases.join(' ')}`.toLowerCase().includes(term)) && (request.category === 'all' || request.category === definition.category) && (request.risk === 'all' || request.risk === definition.risk) && (request.platform === 'all' || definition.supportedPlatforms.includes(request.platform)) && (!request.favoritesOnly || favorites.includes(definition.id)))
+    const matches = registry.filter((definition) => terms.every((term) => `${commandFamily(definition).title} ${definition.title} ${definition.description} ${definition.category} ${definition.aliases.join(' ')}`.toLowerCase().includes(term)) && (request.category === 'all' || request.category === definition.category) && (request.risk === 'all' || request.risk === definition.risk) && (request.platform === 'all' || definition.supportedPlatforms.includes(request.platform)) && (!request.favoritesOnly || favorites.includes(definition.id)))
       .map(({ executable, arguments: _arguments, mutation: _mutation, network: _network, projectFile: _projectFile, successExitCodes: _successExitCodes, ...definition }) => { void _arguments; void _mutation; void _network; void _projectFile; void _successExitCodes; return { ...definition, favorite: favorites.includes(definition.id), unavailableReason: !definition.supportedPlatforms.includes(process.platform as 'darwin' | 'win32' | 'linux') ? 'Unavailable on this operating system.' : !findExecutable(executable) ? `${executable} is not installed or absent from the application PATH.` : undefined } })
+    if (!request.favoritesOnly) return matches
+    const order = new Map(this.favoriteGroupOrder().map((id, index) => [id, index]))
+    return matches.sort((a, b) => (order.get(commandFamily(a).id) ?? 200) - (order.get(commandFamily(b).id) ?? 200))
+  }
+  private favoriteGroupOrder(): string[] {
+    const favorites = new Set(this.store.favorites())
+    const current = [...new Set(registry.filter((entry) => favorites.has(entry.id)).map((entry) => commandFamily(entry).id))]
+    const saved = this.store.favoriteOrder()
+    return [...saved.filter((id) => current.includes(id)), ...current.filter((id) => !saved.includes(id))]
+  }
+  moveFavorite(input: unknown) {
+    const { sourceId, targetId, placement } = favoriteMoveSchema.parse(input)
+    const order = this.favoriteGroupOrder()
+    if (!order.includes(sourceId) || !order.includes(targetId)) throw new PublicError('These favorite groups changed. Refresh and try again.')
+    if (sourceId === targetId) return
+    const next = order.filter((id) => id !== sourceId), target = next.indexOf(targetId)
+    next.splice(target + (placement === 'after' ? 1 : 0), 0, sourceId)
+    this.store.setFavoriteOrder(next)
   }
   async prepare(input: CommandRequest): Promise<Prepared> {
     const request = commandRequestSchema.parse(input)

@@ -320,3 +320,13 @@
 @media (max-width: 1040px) { .dashboard-top-grid, .dashboard-bottom-grid { grid-template-columns: minmax(0, 1fr); }.dashboard-heading { flex-wrap: wrap; } }
 
 @media (max-width: 1180px) { .command-center .nav-item .nav-chevron { display: none; } }
+
+.favorite-grip { display: grid; place-items: center; width: 18px; min-width: 18px; height: 28px; padding: 2px; border: 0; border-radius: 4px; margin-left: 3px; background: transparent; color: var(--muted-foreground); cursor: grab; opacity: .6; }
+.favorite-grip:hover, .favorite-grip:focus-visible { color: var(--purple); background: var(--muted); opacity: 1; }
+.favorite-grip:active { cursor: grabbing; }
+.favorite-grip svg { width: 12px; height: 12px; }
+.favorite-grip:disabled { cursor: default; opacity: .3; }
+.command-center .favorite-row .command-item { padding-left: 5px; gap: 7px; }
+.favorite-row.is-dragging { opacity: .45; }
+.favorite-row.drop-before { box-shadow: 0 -2px 0 var(--purple); }
+.favorite-row.drop-after { box-shadow: 0 2px 0 var(--purple); }

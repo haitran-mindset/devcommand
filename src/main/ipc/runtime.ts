@@ -7,7 +7,7 @@ import { TerminalManager } from '../services/terminal/manager'
 import type { SettingsStore } from '../infrastructure/database/store'
 import { WorkspaceService, PublicError } from '../services/workspace/service'
 import { CommandService } from '../services/commands/service'
-import { commandRequestSchema, commandExecuteSchema, searchSchema } from '../../shared/commands'
+import { commandRequestSchema, commandExecuteSchema, searchSchema, favoriteMoveSchema } from '../../shared/commands'
 import { GitService } from '../services/git/service'
 import { GitWatcher } from '../services/git/watcher'
 import { gitSnapshotSchema, gitDiffSchema } from '../../shared/git'
@@ -66,6 +66,7 @@ export function registerRuntime(handle: IpcHandle, window: BrowserWindow, store:
   handle('library:preview', (payload) => commands.preview(commandRequestSchema.parse(payload)))
   handle('library:execute', (payload) => { const { request, confirmationToken } = commandExecuteSchema.parse(payload); return commands.execute(request, confirmationToken) })
   handle('library:favorite', (payload) => { const { commandId, favorite } = z.object({ commandId: z.string().max(80), favorite: z.boolean() }).strict().parse(payload); commands.favorite(commandId, favorite); return null })
+  handle('library:move-favorite', (payload) => { commands.moveFavorite(favoriteMoveSchema.parse(payload)); return null })
   handle('library:clear-history', (payload) => { empty(payload); commands.clearHistory(); return null })
   handle('library:history', (payload) => { empty(payload); return commands.history() })
   handle('library:launch', (payload) => {

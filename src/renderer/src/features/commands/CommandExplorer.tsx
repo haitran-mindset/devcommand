@@ -4,7 +4,7 @@ import { copyText } from '../../lib/clipboard'
 import { SelectField } from '../../components/ui/select-field'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Code2, Copy, Folder, GitBranch, Info, LayoutGrid, Link, Play, Search, SlidersHorizontal, Star, Terminal, TriangleAlert, X } from 'lucide-react'
+import { Code2, Copy, Folder, GripVertical, GitBranch, Info, LayoutGrid, Link, Play, Search, SlidersHorizontal, Star, Terminal, TriangleAlert, X } from 'lucide-react'
 import type { CommandPreview, CommandRequest, CommandSummary, SearchRequest } from '../../../../shared/commands'
 import { useNavigate } from 'react-router-dom'
 import { CommandIcon } from './CommandIcon'
@@ -21,6 +21,11 @@ export function CommandExplorer({ notify, favoritesOnly = false }: { notify: (me
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [listError, setListError] = useState('')
   const [savingFavorite, setSavingFavorite] = useState(false)
+  const [reordering, setReordering] = useState(false)
+  const movingFavorite = useRef(false)
+  const [draggedGroup, setDraggedGroup] = useState('')
+  const [dropTarget, setDropTarget] = useState<{ id: string; placement: 'before' | 'after' } | null>(null)
+  const [reorderNotice, setReorderNotice] = useState('')
   const workspaces = useWorkspaces()
   const [category, setCategory] = useState<SearchRequest['category']>('all')
   const [risk, setRisk] = useState<SearchRequest['risk']>('all')
@@ -32,7 +37,7 @@ export function CommandExplorer({ notify, favoritesOnly = false }: { notify: (me
   const selected = commands.data?.find((entry) => entry.id === session.selectedId) ?? (groups[0] ? defaultCommand(groups[0]) : undefined)
   const selectedGroup = groups.find((group) => group.commands.some((entry) => entry.id === selected?.id))
   const favorite = async (group: CommandGroup) => {
-    if (savingFavorite || !catalog.data) return
+    if (savingFavorite || movingFavorite.current || !catalog.data) return
     const entries = catalogGroups.find((entry) => entry.id === group.id)?.commands ?? group.commands
     const next = !entries.some((entry) => entry.favorite)
     setSavingFavorite(true); setListError('')
@@ -40,20 +45,35 @@ export function CommandExplorer({ notify, favoritesOnly = false }: { notify: (me
     catch { setListError('Unable to update group favorites. Try again.'); await client.invalidateQueries({ queryKey: ['library'] }) }
     finally { setSavingFavorite(false) }
   }
+  const moveFavorite = async (sourceId: string, targetId: string, placement: 'before' | 'after', keyboard = false) => {
+    if (movingFavorite.current || savingFavorite || sourceId === targetId) return
+    if (selected && session.selectedId !== selected.id) session.select(selected.id)
+    movingFavorite.current = true; setReordering(true); setListError(''); setReorderNotice('')
+    try {
+      unwrap(await window.devcommand.library.moveFavorite({ sourceId, targetId, placement }))
+      await client.invalidateQueries({ queryKey: ['library'] })
+      setReorderNotice('Favorite order saved.')
+      if (keyboard) requestAnimationFrame(() => document.getElementById(`favorite-grip-${sourceId}`)?.focus())
+    } catch { setListError('Unable to reorder favorites. Refresh and try again.'); await client.invalidateQueries({ queryKey: ['library'] }) }
+    finally { movingFavorite.current = false; setReordering(false); setDraggedGroup(''); setDropTarget(null) }
+  }
   return <div className="explorer-grid"><section className="panel command-list" aria-label="Command library">
     <div className="library-heading"><button type="button" aria-pressed={!favoritesOnly} className={!favoritesOnly ? 'selected' : undefined} onClick={() => navigate('/commands')}><LayoutGrid />Commands</button><button type="button" aria-pressed={favoritesOnly} className={favoritesOnly ? 'selected' : undefined} onClick={() => navigate('/my-commands')}><Star />Favorites</button><span className="library-count">{groups.length}</span></div>
     <div className="category-picker"><LayoutGrid /><SelectField label="Command category" value={category} onValueChange={(value) => setCategory(value as typeof category)} options={[{ value: 'all', label: 'All commands' }, 'Git', 'General', 'Node', 'Flutter', 'System', 'Permissions', 'AI Developer CLI', 'SSH']} className="min-w-0 flex-1" /><button aria-label="Toggle command filters" title="Risk and platform filters" aria-expanded={filtersOpen} onClick={() => setFiltersOpen(!filtersOpen)}><SlidersHorizontal /></button></div>
     <div className="library-search"><Search aria-hidden="true" /><input type="search" aria-label="Search commands" placeholder="Search commands…" value={session.query} maxLength={200} autoComplete="off" onChange={(event) => session.setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); session.setQuery('') } }} />{session.query && <button type="button" aria-label="Clear command search" title="Clear search" onClick={() => session.setQuery('')}><X aria-hidden="true" /></button>}</div>
     <div className="library-filters" hidden={!filtersOpen}><SelectField label="Command risk" value={risk} onValueChange={(value) => setRisk(value as typeof risk)} options={[{ value: 'all', label: 'All risks' }, 'safe', 'caution', 'dangerous']} className="min-w-0 flex-1" size="sm" /><SelectField label="Command platform" value={platform} onValueChange={(value) => setPlatform(value as typeof platform)} options={[{ value: 'all', label: 'All platforms' }, 'darwin', 'linux', 'win32']} className="min-w-0 flex-1" size="sm" /></div>
+    <span className="sr-only" role="status">{reorderNotice}</span>
     {listError && <p role="alert" className="terminal-error">{listError}</p>}
-    <div className="command-items">{groups.map((group) => {
+    <div className="command-items">{groups.map((group, index) => {
       const active = group.id === selectedGroup?.id
       const entry = group.commands.find((entry) => entry.id === session.selectedId) ?? defaultCommand(group)
       const entries = catalogGroups.find((candidate) => candidate.id === group.id)?.commands ?? group.commands
       const saved = entries.filter((entry) => entry.favorite).length
       const unavailable = group.commands.every((command) => !!command.unavailableReason)
-      return <div key={group.id} className={cn('command-row', active && 'selected')}><button className="command-item" aria-label={group.title} onClick={() => { if (!active || entry.id !== selected?.id) session.select(entry.id) }} aria-pressed={active}><CommandIcon id={entry.id} /><span><strong>{group.title}</strong><small>{unavailable ? entry.unavailableReason : group.description}</small></span><span className="command-group-count" title={`${group.commands.length} matching actions`}>{group.commands.length}</span></button><button className="row-favorite" aria-label={`Favorite ${group.title}`} title={`${saved} of ${entries.length} actions saved. ${saved ? 'Remove group from' : 'Add group to'} Favorites.`} aria-pressed={saved === 0 ? false : saved === entries.length ? true : 'mixed'} disabled={savingFavorite || catalog.isPending || catalog.isError} onClick={() => void favorite(group)}><Star fill={saved ? 'currentColor' : 'none'} /></button></div>
-    })}{commands.isPending && <p className="list-empty">Loading commands…</p>}{commands.isError && <p role="alert" className="list-empty">Unable to load commands.</p>}{commands.data?.length === 0 && <div className="list-empty"><p>No matching commands.</p><small>Try “remote”, “undo commit” or change your filters.</small></div>}</div><div className="list-footnote"><Info />{favoritesOnly ? 'Your starred commands, ready to configure.' : 'Choose a command. Make it yours.'}</div></section>
+      return <div key={group.id} className={cn('command-row', active && 'selected', favoritesOnly && 'favorite-row', draggedGroup === group.id && 'is-dragging', dropTarget?.id === group.id && `drop-${dropTarget.placement}`)} onDragOver={(event) => { if (!favoritesOnly || !draggedGroup || draggedGroup === group.id || reordering) return; event.preventDefault(); event.dataTransfer.dropEffect = 'move'; const bounds = event.currentTarget.getBoundingClientRect(); setDropTarget({ id: group.id, placement: event.clientY < bounds.top + bounds.height / 2 ? 'before' : 'after' }); const container = event.currentTarget.parentElement; if (container) { const area = container.getBoundingClientRect(); if (event.clientY < area.top + 28) container.scrollTop -= 12; else if (event.clientY > area.bottom - 28) container.scrollTop += 12 } }} onDrop={(event) => { if (!favoritesOnly || !draggedGroup || reordering) return; event.preventDefault(); const bounds = event.currentTarget.getBoundingClientRect(); void moveFavorite(draggedGroup, group.id, event.clientY < bounds.top + bounds.height / 2 ? 'before' : 'after') }}>
+        {favoritesOnly && <button type="button" id={`favorite-grip-${group.id}`} className="favorite-grip" draggable={!reordering && !savingFavorite} disabled={reordering || savingFavorite || groups.length < 2} aria-label={`Reorder ${group.title}`} aria-describedby="favorite-reorder-hint" title="Drag to reorder · Alt+↑/↓" onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-devcommand-favorite', group.id); const row = event.currentTarget.closest('.command-row'); if (row) event.dataTransfer.setDragImage(row, 18, 18); setDraggedGroup(group.id); setDropTarget(null) }} onDragEnd={() => { setDraggedGroup(''); setDropTarget(null) }} onKeyDown={(event) => { if (!event.altKey || !['ArrowUp', 'ArrowDown'].includes(event.key)) return; event.preventDefault(); const target = groups[index + (event.key === 'ArrowUp' ? -1 : 1)]; if (target) void moveFavorite(group.id, target.id, event.key === 'ArrowUp' ? 'before' : 'after', true) }}><GripVertical aria-hidden="true" /></button>}
+        <button className="command-item" aria-label={group.title} onClick={() => { if (!active || entry.id !== selected?.id) session.select(entry.id) }} aria-pressed={active}><CommandIcon id={entry.id} /><span><strong>{group.title}</strong><small>{unavailable ? entry.unavailableReason : group.description}</small></span><span className="command-group-count" title={`${group.commands.length} matching actions`}>{group.commands.length}</span></button><button className="row-favorite" aria-label={`Favorite ${group.title}`} title={`${saved} of ${entries.length} actions saved. ${saved ? 'Remove group from' : 'Add group to'} Favorites.`} aria-pressed={saved === 0 ? false : saved === entries.length ? true : 'mixed'} disabled={savingFavorite || reordering || catalog.isPending || catalog.isError} onClick={() => void favorite(group)}><Star fill={saved ? 'currentColor' : 'none'} /></button></div>
+    })}{commands.isPending && <p className="list-empty">Loading commands…</p>}{commands.isError && <p role="alert" className="list-empty">Unable to load commands.</p>}{commands.data?.length === 0 && <div className="list-empty"><p>No matching commands.</p><small>Try “remote”, “undo commit” or change your filters.</small></div>}</div><div className="list-footnote"><Info />{favoritesOnly ? <span id="favorite-reorder-hint">Drag the grip to reorder · Alt+↑/↓</span> : 'Choose a command. Make it yours.'}</div></section>
     {selected ? <CommandInspector key={`${selected.id}:${workspaces.data?.selectedId ?? 'home'}:${session.draft ? JSON.stringify(session.draft) : ''}`} command={selected} actions={selectedGroup?.commands ?? [selected]} onActionChange={session.select} workspaceId={workspaces.data?.selectedId ?? undefined} notify={notify} /> : <section className="panel module-page"><h1>Choose a command</h1><p>Select a command from the library to see its parameters and preview.</p></section>}
     <ContextRail />
   </div>

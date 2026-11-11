@@ -41,6 +41,7 @@ const api: DevCommandAPI = {
     preview: (request) => ipcRenderer.invoke('library:preview', request),
     execute: (request, confirmationToken) => ipcRenderer.invoke('library:execute', { request, confirmationToken }),
     favorite: (commandId, favorite) => ipcRenderer.invoke('library:favorite', { commandId, favorite }),
+    moveFavorite: (input) => ipcRenderer.invoke('library:move-favorite', input),
     history: () => ipcRenderer.invoke('library:history'),
     onHistoryError: (handler) => subscribe<string>('history:error', handler),
     insert: (request) => ipcRenderer.invoke('library:insert', request)
