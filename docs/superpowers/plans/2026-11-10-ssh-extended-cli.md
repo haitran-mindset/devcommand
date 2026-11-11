@@ -9,7 +9,7 @@
 - No automatic key overwrite, private-key deletion, host-key trust bypass or unknown host acceptance. Connection tests use explicit fields, strict checking and batch authentication; custom proxy/local commands are not executed by diagnostics.
 - SSH config backup and conservative atomic updates preserve comments/unknown directives. Complex Include/Match/multi-pattern/duplicate-identity blocks remain read-only rather than guessing semantics.
 - No real user SSH changes, agent changes or external connections during automated tests. Fixtures use explicit constructor dependencies and a test-only Electron preload for an isolated home lookup, never a shipped runtime override or HOME environment reassignment.
-- No new dependencies, project commits/push, publishing or Phase 6 workflows.
+- No new dependencies, project commits/push, publishing.
 
 ## Tasks
 - [x] Shared schemas/API for SSH snapshots/actions; CLI discovery with unavailable reasons and safe absolute executable lookup.

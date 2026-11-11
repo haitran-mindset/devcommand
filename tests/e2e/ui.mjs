@@ -40,6 +40,8 @@ try {
   assert.equal(await librarySearch.inputValue(), '')
   await page.waitForFunction(() => document.querySelectorAll('.command-row').length > 1)
   assert.equal(await page.getByRole('link', { name: 'Docker', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('link', { name: 'Workflows', exact: true }).count(), 0)
+  assert.equal(await page.evaluate(() => Object.hasOwn(window.devcommand, 'workflows')), false, 'Removed module is not exposed by preload')
   for (let index = 0; index < 8; index++) {
     await page.getByRole('button', { name: 'New terminal', exact: true }).click()
     await page.waitForFunction((count) => document.querySelectorAll('.terminal-tab').length === count, index + 1)

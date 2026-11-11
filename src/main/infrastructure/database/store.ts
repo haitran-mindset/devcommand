@@ -13,7 +13,7 @@ export function openSettingsStore(path: string) {
     sqlite.pragma('journal_mode = WAL')
     sqlite.transaction(() => {
       const version = sqlite.pragma('user_version', { simple: true }) as number
-      if (version > 2) throw new Error('Database was created by a newer DevCommand version')
+      if (version > 4) throw new Error('Database was created by a newer DevCommand version')
       if (version < 1) {
         sqlite.exec('CREATE TABLE app_settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL)')
         sqlite.pragma('user_version = 1')
@@ -23,6 +23,19 @@ export function openSettingsStore(path: string) {
           CREATE TABLE command_favorites (command_id TEXT PRIMARY KEY);
           CREATE TABLE executions (id TEXT PRIMARY KEY, record_json TEXT NOT NULL, started_at TEXT NOT NULL);`)
         sqlite.pragma('user_version = 2')
+      }
+      // Clean up the removed experimental module without resetting other local data.
+      if (version < 4) {
+        sqlite.exec('DROP TABLE IF EXISTS workflow_runs; DROP TABLE IF EXISTS workflows;')
+        const preferences = sqlite.prepare('SELECT value_json FROM app_settings WHERE key = ?').get('preferences') as { value_json: string } | undefined
+        if (preferences) {
+          const value: unknown = JSON.parse(preferences.value_json)
+          if (value && typeof value === 'object' && 'route' in value && value.route === 'workflows') {
+            value.route = 'commands'
+            sqlite.prepare('UPDATE app_settings SET value_json = ? WHERE key = ?').run(JSON.stringify(value), 'preferences')
+          }
+        }
+        sqlite.pragma('user_version = 4')
       }
     })()
     const db = drizzle(sqlite)

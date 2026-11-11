@@ -14,7 +14,7 @@
 - [x] Unit/temp-Git integration tests for policies/tokens/injection/migrations, IPC and actual Electron E2E including remote URL journey. Run lint/typecheck/tests/build/macOS packaging and regression suites.
 
 ## Scope boundaries
-No Phase 4 Git Manager pages, SSH command pack, clone UI, external editor launching, workflows or arbitrary user-authored command definitions. Existing PTY/Process Core and Phase 1 preferences remain functional. macOS ARM64 is primary; document unverified platforms.
+No Phase 4 Git Manager pages, SSH command pack, clone UI, external editor launching or arbitrary user-authored command definitions. Existing PTY/Process Core and Phase 1 preferences remain functional. macOS ARM64 is primary; document unverified platforms.
 
 ## Files
 - `src/shared/commands.ts`: public command/workspace/preview/history types and strict IPC schemas.

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link as RouterLink, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Check, CheckCircle2, ChevronDown, ChevronRight, CircleHelp, Database, Folder, FolderOpen, GitBranch, GitCommitHorizontal, House, Info, KeyRound, LayoutGrid, Monitor, Moon, Network, PanelLeftClose, PanelLeftOpen, Radio, RefreshCw, Search, Settings, SquareTerminal, Sun, Terminal, X, Clock, Archive, type LucideIcon } from 'lucide-react'
+import { Check, CheckCircle2, ChevronDown, ChevronRight, CircleHelp, Database, Folder, FolderOpen, GitBranch, GitCommitHorizontal, House, Info, KeyRound, LayoutGrid, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radio, RefreshCw, Search, Settings, SquareTerminal, Sun, Terminal, X, Clock, Archive, type LucideIcon } from 'lucide-react'
 import { Button } from './components/ui/button'
 import { cn } from './lib/utils'
 import { useSettings, useUpdateSettings } from './lib/settings'
@@ -24,7 +24,6 @@ import { defaultSettings, routes, type AppRoute, type AppSettings } from '../../
 const nav: { route: AppRoute; label: string; icon: LucideIcon }[] = [
   { route: 'dashboard', label: 'Dashboard', icon: House },
   { route: 'commands', label: 'Command Explorer', icon: LayoutGrid },
-  { route: 'workflows', label: 'Workflows', icon: Network },
   { route: 'workspaces', label: 'Repositories', icon: Folder },
   { route: 'git', label: 'Git Manager', icon: GitBranch },
   { route: 'ssh', label: 'SSH Manager', icon: KeyRound },
@@ -179,6 +178,6 @@ function SettingsPage({ settings, save, pending }: { settings: AppSettings; save
 function ModulePage({ route, navigate }: { route: string; navigate: ReturnType<typeof useNavigate> }) {
   const item = nav.find((entry) => entry.route === route)
   const Icon = item?.icon ?? Info
-  const phase = ['git-config', 'git-remote'].includes(route) ? 4 : ['ssh', 'docker', 'shell'].includes(route) ? 5 : route === 'workflows' ? 6 : 3
+  const phase = ['git-config', 'git-remote'].includes(route) ? 4 : ['ssh', 'docker', 'shell'].includes(route) ? 5 : 3
   return <section className="panel module-page"><div className="welcome-icon"><Icon /></div><span className="reference-badge">Planned for Phase {phase}</span><h1>{item?.label ?? 'Page not found'}</h1><p>{route === 'workspaces' ? 'No repositories connected yet. Adding and switching local repositories will be available in Phase 3.' : `This module is part of the next development stages. Your local files and configuration have not been accessed.`}</p><Button variant="outline" onClick={() => navigate('/commands')}><SquareTerminal />Browse command references</Button></section>
 }

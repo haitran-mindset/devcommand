@@ -32,6 +32,30 @@ describe('SQLite settings', () => {
       second.close()
     } finally { rmSync(directory, { recursive: true, force: true }) }
   })
+  it('removes the retired module data and migrates its saved route without losing settings', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'devcommand-retired-module-'))
+    try {
+      const path = join(directory, 'settings.sqlite'), initial = openSettingsStore(path)
+      initial.update({ theme: 'light' })
+      const workspace = initial.addWorkspace('/fixture/repo')
+      initial.favoriteCommand('git.status', true)
+      initial.close()
+      const raw = new Database(path)
+      raw.exec('CREATE TABLE workflows (id TEXT PRIMARY KEY); CREATE TABLE workflow_runs (id TEXT PRIMARY KEY); PRAGMA user_version=3;')
+      raw.prepare('UPDATE app_settings SET value_json = ? WHERE key = ?').run(JSON.stringify({ ...defaultSettings, theme: 'light', route: 'workflows' }), 'preferences')
+      raw.close()
+      const migrated = openSettingsStore(path)
+      expect(migrated.get()).toEqual({ ...defaultSettings, theme: 'light', route: 'commands' })
+      expect(migrated.listWorkspaces()[0].id).toBe(workspace.id)
+      expect(migrated.favorites()).toEqual(['git.status'])
+      migrated.close()
+      const verify = new Database(path)
+      try {
+        expect(verify.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('workflows','workflow_runs')").all()).toEqual([])
+        expect(verify.pragma('user_version', { simple: true })).toBe(4)
+      } finally { verify.close() }
+    } finally { rmSync(directory, { recursive: true, force: true }) }
+  })
   it('reports malformed persisted settings without silently resetting them', () => {
     const store = openSettingsStore(':memory:')
     expect(() => store.update({ theme: 'invalid' } as never)).toThrow()

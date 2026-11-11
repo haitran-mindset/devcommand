@@ -4,7 +4,7 @@ import type { WorkspaceAPI } from './commands'
 import type { RuntimeAPI } from './runtime'
 import type { ExtendedAPI } from './extended'
 
-export const routes = ['dashboard', 'git', 'commands', 'git-config', 'git-remote', 'ssh', 'docker', 'shell', 'my-commands', 'workflows', 'history', 'workspaces', 'settings'] as const
+export const routes = ['dashboard', 'git', 'commands', 'git-config', 'git-remote', 'ssh', 'docker', 'shell', 'my-commands', 'history', 'workspaces', 'settings'] as const
 export const settingsSchema = z.object({
   theme: z.enum(['dark', 'light', 'system']),
   route: z.enum(routes),

@@ -23,7 +23,7 @@ npm run test:e2e:runtime
 npm run pack
 ```
 
-`npm run pack` creates `release/mac-arm64/DevCommand.app` on an Apple Silicon Mac. Certificate signing is disabled for local builds; the app is not notarized or ready for public distribution. Installers from `npm run dist` have not been validated. The default Electron app icon is retained.
+`npm run pack` creates `release/mac-arm64/DevCommand.app` on an Apple Silicon Mac. Certificate signing is disabled for local builds; the app is not notarized or ready for public distribution. Use `npm run dist -- --mac --arm64` to create the macOS Apple Silicon DMG in `release/`. DevCommand uses its purple terminal app icon.
 
 Run both smoke suites against the packaged application:
 
@@ -52,7 +52,7 @@ Open **Shell Tools → Process Core** and run `git --version` or `node --version
 
 Output is streamed separately for stdout/stderr with execution IDs and monotonic sequence numbers. The panel shows status, duration, exit code/signal, limited output and cancellation while running. CLI checks have a 10-second timeout. The core retains at most 12 executions in memory, caps retained output at 128 Ki characters / 512 chunks per execution, and stops a process after 1 MiB received output. Known token/credential patterns are redacted across stream chunks; oversized lines are omitted. Phase 3 persists redacted managed history as described below.
 
-The Git Command Explorer is now executable through the Phase 3 library described below. The Shell Tools process checks remain available as a compact diagnostic surface. Dedicated Git/SSH/Docker/workflow manager routes identify later phases.
+The Git Command Explorer is now executable through the Phase 3 library described below. The Shell Tools process checks remain available as a compact diagnostic surface. Dedicated Git/SSH/Docker manager routes identify later phases.
 
 ## Architecture and security
 
@@ -79,7 +79,7 @@ Native `.node` libraries and node-pty resources are unpacked from ASAR. The pack
 
 ## Validation limits
 
-macOS ARM64 is the primary tested platform. Windows has a shell/ConPTY and taskkill adapter, and Linux uses the Unix adapter, but neither is verified. Intel macOS, release signing/notarization and installers need separate validation. Split panes, configurable default cwd, database backup/export UI and Phase 6 workflows are not included.
+macOS ARM64 is the primary tested platform. Windows has a shell/ConPTY and taskkill adapter, and Linux uses the Unix adapter, but neither is verified. Intel macOS, release signing/notarization and installers need separate validation. Split panes, configurable default cwd and database backup/export UI are not included.
 
 References: [Electron security](https://www.electronjs.org/docs/latest/tutorial/security), [node-pty](https://github.com/microsoft/node-pty), [xterm.js](https://xtermjs.org/docs/).
 
@@ -110,7 +110,7 @@ The test uses temporary Git repositories and stubs only the native picker's sele
 
 The installed Playwright build's `waitForFunction` does not poll asynchronous predicates correctly; the E2E IPC wait helper therefore awaits repeated evaluations explicitly.
 
-**Limits:** Repository probes and confirmation diffs have a 512 Ki-character / five-second bound; unusually large/slow repositories can be refused for safety. External process races, unusual shell startup scripts, credential helpers, network authentication and Windows/Linux/Intel macOS need separate validation. Phase 4 Git Manager and Phase 5 SSH/Docker packs are implemented below; Phase 6 workflows remain future work.
+**Limits:** Repository probes and confirmation diffs have a 512 Ki-character / five-second bound; unusually large/slow repositories can be refused for safety. External process races, unusual shell startup scripts, credential helpers, network authentication and Windows/Linux/Intel macOS need separate validation. Phase 4 Git Manager and Phase 5 SSH/Docker packs are implemented below.
 
 ## Phase 4 — Git Manager
 
@@ -138,7 +138,7 @@ DEVCOMMAND_EXECUTABLE="$PWD/release/mac-arm64/DevCommand.app/Contents/MacOS/DevC
 
 The Git Manager test uses only temporary repositories and fixture commits. It checks GUI/CLI parity for stage/unstage/diff/config/remotes/branches/commits/stash, cancel-before-confirm, explicit dangerous warnings, refresh and real conflict UI. Native picker selection is stubbed only in privileged test code. Unit/integration coverage includes literal Unicode/magic paths, unborn staging, unmerged/linked-worktree protection, rename unstage, commit paging, stale stash identity, whitespace-sensitive fingerprints and watcher debounce/cleanup.
 
-**Verified target:** macOS ARM64 with Git 2.55.0. Windows/Linux/Intel macOS, unusual Git versions and release signing/notarization remain unverified. Merge resolution is manual; Stage marks a conflicted file resolved in the index and does not remove conflict markers. Phase 5 SSH/Docker management is described below; Phase 6 workflows remain future work.
+**Verified target:** macOS ARM64 with Git 2.55.0. Windows/Linux/Intel macOS, unusual Git versions and release signing/notarization remain unverified. Merge resolution is manual; Stage marks a conflicted file resolved in the index and does not remove conflict markers. Phase 5 SSH/Docker management is described below.
 
 
 ## Phase 5 — SSH & Extended CLI
@@ -166,7 +166,7 @@ DEVCOMMAND_EXECUTABLE="$PWD/release/mac-arm64/DevCommand.app/Contents/MacOS/DevC
 
 **Verified:** macOS ARM64, 57 unit/native tests, lint/typecheck/build/pack, and all five Electron journeys against both build output and the packaged `.app`. The extended journey uses real `ssh-keygen` in a temporary directory, fixture-only SSH network/agent/Docker programs and an isolated profile. Source tests use a test-only home lookup startup hook; packaged macOS tests use Playwright's privileged main-process channel and recreate the window after startup. Both assert isolation before SSH requests. Neither fixture mechanism is shipped in the application. No real user keys, OS-agent identities, Docker resources or remote hosts are modified by the tests.
 
-**Limits:** Real SSH network authentication/agent integration, live Docker/Compose engines and Flutter SDK/device operations were not exercised. Docker policy/Compose-state checks use fixture transports. Windows/Linux/Intel macOS remain unverified; SSH writes are disabled on Windows pending ACL validation, and npm/Flutter wrapper packs are limited to macOS/Linux. The macOS app is unsigned/unnotarized, uses the default Electron icon and has no installer validation. Phase 6 workflows are not implemented.
+**Limits:** Real SSH network authentication/agent integration, live Docker/Compose engines and Flutter SDK/device operations were not exercised. Docker policy/Compose-state checks use fixture transports. Windows/Linux/Intel macOS remain unverified; SSH writes are disabled on Windows pending ACL validation, and npm/Flutter wrapper packs are limited to macOS/Linux. The macOS app is unsigned/unnotarized; Intel macOS remains unverified.
 
 
 ## Command Center interface refresh
