@@ -1,0 +1,118 @@
+{
+  "name": "devcommand",
+  "version": "0.1.0",
+  "description": "Local-first developer command center",
+  "author": "DevCommand",
+  "private": true,
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev --watch",
+    "start": "electron-vite preview",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "postinstall": "electron-builder install-app-deps && node scripts/prepare-native.mjs",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder",
+    "test:e2e": "node tests/e2e/foundation.mjs",
+    "predev": "node scripts/prepare-native.mjs",
+    "pretest": "node scripts/prepare-native.mjs",
+    "prepack": "node scripts/prepare-native.mjs",
+    "test:e2e:runtime": "node tests/e2e/runtime.mjs",
+    "test:e2e:workspace": "node tests/e2e/workspace.mjs",
+    "test:e2e:command-packs": "node tests/e2e/command-packs.mjs",
+    "test:e2e:ports": "node tests/e2e/ports.mjs",
+    "test:e2e:git": "node tests/e2e/git.mjs",
+    "test:e2e:extended": "node tests/e2e/extended.mjs",
+    "test:e2e:ui": "node tests/e2e/ui.mjs",
+    "icon": "electron scripts/generate-icon.cjs"
+  },
+  "build": {
+    "appId": "dev.devcommand.desktop",
+    "productName": "DevCommand",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "**/*.node",
+      "node_modules/node-pty/**"
+    ],
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.developer-tools",
+      "identity": null,
+      "icon": "resources/icon.icns"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "resources/icon.png"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "resources/icon.png"
+    },
+    "afterPack": "scripts/after-pack.cjs",
+    "extraResources": [
+      {
+        "from": "resources/icon.png",
+        "to": "icon.png"
+      }
+    ]
+  },
+  "dependencies": {
+    "@radix-ui/react-slot": "^1.5.0",
+    "@tanstack/react-query": "^5.107.1",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "better-sqlite3": "^13.0.3",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cn": "^0.5.2",
+    "drizzle-orm": "^0.45.4",
+    "electron-log": "^5.4.4",
+    "lucide-react": "^1.71.0",
+    "node-pty": "^1.1.0",
+    "radix-ui": "^1.8.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router-dom": "^7.18.5",
+    "tailwind-merge": "^3.7.0",
+    "zod": "^4.6.7",
+    "zustand": "^5.1.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0",
+    "electron-vite": "^6.0.0",
+    "eslint": "^10.14.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.7",
+    "playwright": "^1.65.0",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.2",
+    "vite": "^8.3.7",
+    "vitest": "^5.1.0"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}
