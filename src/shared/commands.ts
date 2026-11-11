@@ -4,12 +4,12 @@ import type { ExecutionSnapshot, TerminalSession } from './runtime'
 
 export const commandRequestSchema = z.object({ commandId: z.string().min(1).max(80), params: z.record(z.string().max(40), z.union([z.string().max(2048), z.boolean()])).default({}), workspaceId: z.string().uuid().optional() }).strict()
 export const commandExecuteSchema = z.object({ request: commandRequestSchema, confirmationToken: z.string().uuid().optional() }).strict()
-export const searchSchema = z.object({ query: z.string().max(200).default(''), category: z.enum(['all', 'Git', 'General', 'Node', 'Flutter', 'System', 'Permissions', 'AI Developer CLI']).default('all'), risk: z.enum(['all', 'safe', 'caution', 'dangerous']).default('all'), platform: z.enum(['all', 'darwin', 'win32', 'linux']).default('all'), favoritesOnly: z.boolean().default(false) }).strict()
+export const searchSchema = z.object({ query: z.string().max(200).default(''), category: z.enum(['all', 'Git', 'General', 'Node', 'Flutter', 'System', 'Permissions', 'AI Developer CLI', 'SSH']).default('all'), risk: z.enum(['all', 'safe', 'caution', 'dangerous']).default('all'), platform: z.enum(['all', 'darwin', 'win32', 'linux']).default('all'), favoritesOnly: z.boolean().default(false) }).strict()
 export type CommandRequest = z.infer<typeof commandRequestSchema>
 export type SearchRequest = z.infer<typeof searchSchema>
-export interface CommandParameter { key: string; label: string; type: 'string' | 'enum'; required: boolean; defaultValue?: string; options?: string[]; sensitive?: boolean }
+export interface CommandParameter { key: string; label: string; type: 'string' | 'enum'; required: boolean; defaultValue?: string; options?: string[]; optionLabels?: Record<string, string>; sensitive?: boolean }
 export interface CommandSummary {
-  id: string; title: string; description: string; category: 'Git' | 'General' | 'Node' | 'Flutter' | 'System' | 'Permissions' | 'AI Developer CLI'; aliases: string[];
+  id: string; title: string; description: string; category: 'Git' | 'General' | 'Node' | 'Flutter' | 'System' | 'Permissions' | 'AI Developer CLI' | 'SSH'; aliases: string[];
   risk: 'safe' | 'caution' | 'dangerous'; parameters: CommandParameter[]; examples: string[];
   supportedPlatforms: ('darwin' | 'win32' | 'linux')[]; requiresRepository: boolean; interactive?: boolean; favorite: boolean; unavailableReason?: string
 }

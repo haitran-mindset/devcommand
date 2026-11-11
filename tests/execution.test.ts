@@ -71,3 +71,15 @@ describe('managed process core', () => {
     } finally { await runner.closeAll() }
   })
 })
+
+it('honors backend-defined empty-result exit codes while retaining the actual code', async () => {
+  const runner = new ManagedRunner(() => {})
+  try {
+    const id = runner.execute({ ...definition('process.exit(1)'), successExitCodes: [0, 1] })
+    await waitUntil(() => !!runner.list().find((run) => run.id === id)?.finishedAt)
+    expect(runner.list().find((run) => run.id === id)).toMatchObject({ status: 'succeeded', exitCode: 1 })
+    const failed = runner.execute(definition('process.exit(1)'))
+    await waitUntil(() => !!runner.list().find((run) => run.id === failed)?.finishedAt)
+    expect(runner.list().find((run) => run.id === failed)?.status).toBe('failed')
+  } finally { await runner.closeAll() }
+})

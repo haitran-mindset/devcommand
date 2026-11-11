@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link as RouterLink, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Box, Check, CheckCircle2, ChevronDown, ChevronRight, CircleHelp, Database, Folder, FolderOpen, GitBranch, GitCommitHorizontal, House, Info, KeyRound, LayoutGrid, Monitor, Moon, Network, PanelLeftClose, PanelLeftOpen, Radio, RefreshCw, Search, Settings, SquareTerminal, Star, Sun, Terminal, X, Clock, Archive, type LucideIcon } from 'lucide-react'
+import { Check, CheckCircle2, ChevronDown, ChevronRight, CircleHelp, Database, Folder, FolderOpen, GitBranch, GitCommitHorizontal, House, Info, KeyRound, LayoutGrid, Monitor, Moon, Network, PanelLeftClose, PanelLeftOpen, Radio, RefreshCw, Search, Settings, SquareTerminal, Sun, Terminal, X, Clock, Archive, type LucideIcon } from 'lucide-react'
 import { Button } from './components/ui/button'
 import { cn } from './lib/utils'
 import { useSettings, useUpdateSettings } from './lib/settings'
@@ -14,6 +14,7 @@ import { GitManager } from './features/git/GitManager'
 import { RunningTasks } from './features/execution/RunningTasks'
 import { HistoryPage } from './features/history/HistoryPage'
 import { SshManager } from './features/ssh/SshManager'
+import { Dashboard } from './features/dashboard/Dashboard'
 import { DockerManager } from './features/docker/DockerManager'
 import { useWorkspaces, useRepository, useExecutionRefresh } from './lib/workspace'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -27,7 +28,6 @@ const nav: { route: AppRoute; label: string; icon: LucideIcon }[] = [
   { route: 'workspaces', label: 'Repositories', icon: Folder },
   { route: 'git', label: 'Git Manager', icon: GitBranch },
   { route: 'ssh', label: 'SSH Manager', icon: KeyRound },
-  { route: 'docker', label: 'Docker', icon: Box },
   { route: 'shell', label: 'Shell Tools', icon: SquareTerminal },
   { route: 'history', label: 'History', icon: Clock },
 ]
@@ -60,7 +60,7 @@ export function App() {
   const location = useLocation()
   const restored = useRef(false)
   const help = useRef<HTMLDialogElement>(null)
-  const [gitOpen, setGitOpen] = useState(true)
+  const [gitOpen, setGitOpen] = useState(location.pathname.startsWith('/git'))
   const [notice, setNotice] = useState('')
   const session = useSession()
   const client = useQueryClient()
@@ -149,8 +149,8 @@ export function App() {
       <div className="sidebar-brand"><div className="traffic-lights"><button aria-label="Close window" title="Close window" onClick={() => windowControl('close')} /><button aria-label="Minimize window" title="Minimize window" onClick={() => windowControl('minimize')} /><button aria-label="Maximize or restore window" title="Maximize or restore window" onClick={() => windowControl('maximize')} /></div><div className="brand-lockup"><div className="brand-icon"><Terminal /></div><div className="brand"><strong>DevCommand</strong><span>Developer Command Center</span></div></div></div>
       <nav aria-label="Main navigation">
         {nav.map(({ route: target, label, icon: Icon }) => <div key={target} className={target === 'git' ? 'git-nav-group' : undefined}>
-          <div className="nav-line"><NavLink to={`/${target}`} aria-label={label} title={label} className={cn('nav-item', target === 'commands' && route === 'my-commands' && 'active', target === 'git' && ['git-config', 'git-remote'].includes(route) && 'active')}><Icon /><span>{label}</span></NavLink>{target === 'git' && <button className="nav-expand" aria-label="Toggle Git sections" aria-expanded={gitOpen} onClick={() => setGitOpen(!gitOpen)}>{gitOpen ? <ChevronDown /> : <ChevronRight />}</button>}</div>
-          {target === 'git' && gitOpen && <div className="git-subnav">{gitNavigation.map(({ tab, label: tabLabel, icon: TabIcon }) => <RouterLink key={tab} to={`/git?tab=${tab}`} aria-label={`Git ${tabLabel}`} aria-current={['git', 'git-config', 'git-remote'].includes(route) && gitTab === tab ? 'page' : undefined} className={cn('nav-item nav-child', ['git', 'git-config', 'git-remote'].includes(route) && gitTab === tab && 'active')}><TabIcon /><span>{tabLabel}</span></RouterLink>)}</div>}
+          <div className="nav-line"><NavLink to={`/${target}`} aria-label={label} title={label} aria-expanded={target === 'git' ? gitOpen : undefined} aria-controls={target === 'git' ? 'git-sidebar-sections' : undefined} onClick={() => { if (target === 'git') setGitOpen((open) => !open) }} className={cn('nav-item', target === 'commands' && route === 'my-commands' && 'active', target === 'git' && ['git-config', 'git-remote'].includes(route) && 'active')}><Icon /><span>{label}</span>{target === 'git' && <span className="nav-chevron" aria-hidden="true">{gitOpen ? <ChevronDown /> : <ChevronRight />}</span>}</NavLink></div>
+          {target === 'git' && gitOpen && <div className="git-subnav" id="git-sidebar-sections">{gitNavigation.map(({ tab, label: tabLabel, icon: TabIcon }) => <RouterLink key={tab} to={`/git?tab=${tab}`} aria-label={`Git ${tabLabel}`} aria-current={['git', 'git-config', 'git-remote'].includes(route) && gitTab === tab ? 'page' : undefined} className={cn('nav-item nav-child', ['git', 'git-config', 'git-remote'].includes(route) && gitTab === tab && 'active')}><TabIcon /><span>{tabLabel}</span></RouterLink>)}</div>}
         </div>)}
       </nav>
       <div className="sidebar-bottom"><NavLink className="nav-item" aria-label="Settings" title="Settings" to="/settings"><Settings /><span>Settings</span></NavLink><div className="local-storage"><div><Database /></div><span><strong>Local workspace</strong><small>Stored on this device</small></span></div><button className="collapse-button" aria-label={settings.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={() => update.mutate({ sidebarCollapsed: !settings.sidebarCollapsed })}>{settings.sidebarCollapsed ? <PanelLeftOpen /> : <PanelLeftClose />}<span>Collapse sidebar</span></button></div>
@@ -158,7 +158,7 @@ export function App() {
     <main className="workspace">
       <section className="workspace-context" aria-label="Repository context"><RepositoryPicker notify={setNotice} /><span className="branch-pill"><GitBranch />{repository.data ? `${repository.data.branch}${repository.data.unborn ? ' (unborn)' : ''}${repository.data.bare ? ' (bare)' : ''}` : 'No branch'}{repository.data && <i />}</span><span className={cn('repo-state', repository.data?.clean && 'is-clean', repository.isError && 'has-error')}><CheckCircle2 />{repository.isFetching ? 'Refreshing…' : repository.isError ? 'Repository unavailable' : repository.data ? repository.data.conflicts ? 'Merge conflicts' : repository.data.clean ? 'Clean working tree' : 'Uncommitted changes' : 'No repository connected'}</span><div className="context-actions">{selectedWorkspace && <Button variant="outline" size="sm" disabled={openingRepository} title="Open repository folder" onClick={() => void openRepository()}><FolderOpen />{openingRepository ? 'Opening…' : 'Open repository'}</Button>}<IconButton label="Refresh repository" disabled={!selectedWorkspace || refreshingRepository || repository.isFetching} onClick={() => void refreshRepository()}><RefreshCw /></IconButton></div></section>
       <div className={cn('page-content', route === 'settings' && 'settings-content')}>
-        {(route === 'commands' || route === 'my-commands') ? <CommandExplorer key={location.key} notify={setNotice} favoritesOnly={route === 'my-commands'} /> : route === 'workspaces' ? <WorkspacesPage /> : route === 'history' ? <HistoryPage /> : ['git', 'git-config', 'git-remote'].includes(route) ? <GitManager route={route} /> : route === 'ssh' ? <SshManager /> : route === 'docker' ? <DockerManager /> : route === 'shell' ? <ManagedPanel /> : route === 'settings' ? <SettingsPage settings={settings} save={(patch) => update.mutate(patch)} pending={update.isPending} /> : route === 'dashboard' ? <Dashboard navigate={navigate} /> : <ModulePage route={route} navigate={navigate} />}
+        {(route === 'commands' || route === 'my-commands') ? <CommandExplorer key={location.key} notify={setNotice} favoritesOnly={route === 'my-commands'} /> : route === 'workspaces' ? <WorkspacesPage /> : route === 'history' ? <HistoryPage /> : ['git', 'git-config', 'git-remote'].includes(route) ? <GitManager route={route} /> : route === 'ssh' ? <SshManager /> : route === 'docker' ? <DockerManager /> : route === 'shell' ? <ManagedPanel /> : route === 'settings' ? <SettingsPage settings={settings} save={(patch) => update.mutate(patch)} pending={update.isPending} /> : route === 'dashboard' ? <Dashboard /> : <ModulePage route={route} navigate={navigate} />}
       </div>
       <div className={cn('bottom-workspace', exploring && 'with-tasks')} hidden={!settings.terminalVisible}>
         <TerminalDock visible={settings.terminalVisible} height={settings.terminalHeight} saveHeight={(height) => update.mutate({ terminalHeight: height })} hide={() => update.mutate({ terminalVisible: false })} />
@@ -175,13 +175,6 @@ export function App() {
 
 function SettingsPage({ settings, save, pending }: { settings: AppSettings; save: (patch: Partial<AppSettings>) => void; pending: boolean }) {
   return <section className="panel settings-page"><div className="page-heading"><Settings /><div><h1>Settings</h1><p>Make DevCommand feel like your workspace.</p></div></div><div className="setting-section"><h2>Appearance</h2><p>Choose a theme, or follow your system preferences.</p><div className="theme-options">{([{ id: 'dark', icon: Moon, label: 'Dark' }, { id: 'light', icon: Sun, label: 'Light' }, { id: 'system', icon: Monitor, label: 'System' }] as const).map(({ id, icon: Icon, label }) => <button disabled={pending} key={id} className={cn('theme-choice', settings.theme === id && 'chosen')} aria-pressed={settings.theme === id} onClick={() => save({ theme: id })}><Icon /><span>{label}</span>{settings.theme === id && <Check />}</button>)}</div></div><div className="setting-section"><h2>Layout</h2><label className="checkbox-row"><span>Collapse sidebar</span><input type="checkbox" checked={settings.sidebarCollapsed} disabled={pending} onChange={(e) => save({ sidebarCollapsed: e.target.checked })} /></label><label className="checkbox-row"><span>Show terminal dock</span><input type="checkbox" checked={settings.terminalVisible} disabled={pending} onChange={(e) => save({ terminalVisible: e.target.checked })} /></label></div><div className="setting-section"><h2>Keyboard shortcuts</h2><div className="shortcut-row">Search commands<kbd>⌘ / Ctrl K</kbd></div><div className="shortcut-row">Toggle terminal dock<kbd>⌘ / Ctrl J</kbd></div><div className="shortcut-row">Open settings<kbd>⌘ / Ctrl ,</kbd></div></div><div className="privacy-note"><Check />Preferences stay on this device. No account or telemetry.</div></section>
-}
-function Dashboard({ navigate }: { navigate: ReturnType<typeof useNavigate> }) {
-  const workspaces = useWorkspaces()
-  const favorites = useQuery({ queryKey: ['library', 'dashboard-favorites'], queryFn: async () => unwrap(await window.devcommand.library.search({ query: '', category: 'all', risk: 'all', platform: 'all', favoritesOnly: true })) })
-  const history = useQuery({ queryKey: ['history'], queryFn: async () => unwrap(await window.devcommand.library.history()) })
-  const session = useSession()
-  return <section className="panel welcome-page"><div className="welcome-icon"><Terminal /></div><span className="reference-badge">Your local command center</span><h1>A little less memorizing.<br />A little more building.</h1><p>Choose a repository, configure a command, and keep your terminal close.</p><div className="welcome-actions"><Button onClick={() => navigate('/commands')}><SquareTerminal />Explore commands</Button><Button variant="outline" onClick={() => navigate('/workspaces')}><Folder />Manage repositories</Button></div><div className="foundation-cards"><div><FolderOpen /><h2>Workspaces</h2><p>{workspaces.data?.entries.length ?? 0} repositories connected.</p>{workspaces.data?.entries.slice(0, 3).map((entry) => <p key={entry.id}>{entry.name}</p>)}</div><div><Star /><h2>Favorites</h2>{favorites.data?.length === 0 && <p>Star a command to find it here.</p>}{favorites.data?.slice(0, 3).map((entry) => <Button key={entry.id} variant="link" onClick={() => { session.select(entry.id); session.setQuery(''); navigate('/commands') }}>{entry.title}</Button>)}</div><div><Clock /><h2>Recent activity</h2>{history.data?.length === 0 && <p>No managed executions yet.</p>}{history.data?.slice(0, 3).map((entry) => <p key={entry.execution.id}>{entry.request.commandId} · {entry.execution.status}</p>)}<Button variant="link" onClick={() => navigate('/history')}>View history</Button></div></div></section>
 }
 function ModulePage({ route, navigate }: { route: string; navigate: ReturnType<typeof useNavigate> }) {
   const item = nav.find((entry) => entry.route === route)

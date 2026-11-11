@@ -22,7 +22,7 @@
 - `tests/git.test.ts`, `tests/e2e/git.mjs`: isolated real-Git correctness and GUI/CLI parity.
 
 ## Boundaries
-No commit creation, merge resolution editor, force deletion/push, rebase/cherry-pick, SSH/Docker management or workflow implementation. Config edits stay on the existing safe key allowlist. Windows/Linux/Intel macOS are not claimed verified. No project commits, push or publishing.
+No commit creation, merge resolution editor, force deletion/push, rebase/cherry-pick, SSH management or workflow implementation. Config edits stay on the existing safe key allowlist. Windows/Linux/Intel macOS are not claimed verified. No project commits, push or publishing.
 
 ## Verification record
 - `npm run lint`, `npm run typecheck`, `npm run build`: pass.

@@ -1,3 +1,4 @@
+import { sshAgentLifetimes, sshAgentLifetimeLabels } from '../../../shared/extended'
 import { configKeys } from '../../../shared/git'
 import { hasControlCharacters } from '../../../shared/text'
 import { redact } from '../execution/redact'
@@ -6,7 +7,7 @@ import type { CommandParameter, CommandSummary } from '../../../shared/commands'
 import { PublicError } from '../workspace/service'
 
 export type Argument = string | { param: string } | { flag: string; param: string }
-export interface Definition extends Omit<CommandSummary, 'favorite'> { executable: string; arguments: Argument[]; mutation: boolean; network?: boolean; projectFile?: string }
+export interface Definition extends Omit<CommandSummary, 'favorite'> { executable: string; arguments: Argument[]; mutation: boolean; network?: boolean; projectFile?: string; successExitCodes?: number[] }
 const name = (key = 'name', label = 'Remote Name', defaultValue = 'origin'): CommandParameter => ({ key, label, type: 'string', required: true, defaultValue })
 const choice = (key: string, label: string, options: string[], defaultValue = options[0]): CommandParameter => ({ key, label, type: 'enum', required: true, options, defaultValue })
 const stashParameters = (): CommandParameter[] => [name('stash', 'Stash Reference', 'stash@{0}'), { key: 'expectedOid', label: 'Expected Stash Commit (optional)', type: 'string', required: false, defaultValue: '' }]
@@ -45,7 +46,7 @@ git('restore', 'Restore Tracked Files', 'Discard unstaged tracked changes across
 for (const mode of ['soft', 'mixed', 'hard']) git(`reset.${mode}`, `Git Reset ${mode[0].toUpperCase() + mode.slice(1)}`, `Reset ${mode === 'hard' ? 'HEAD, index and tracked files' : mode === 'mixed' ? 'HEAD and index' : 'HEAD only'}`, ['reset', `--${mode}`, param('ref'), '--'], [name('ref', 'Target Commit', 'HEAD~1')], mode === 'soft' ? 'caution' : 'dangerous', ['undo commit', `reset ${mode}`])
 for (const executable of ['git', 'node', 'docker']) definitions.push({ id: `${executable}.version`, title: `${executable[0].toUpperCase() + executable.slice(1)} Version`, description: `Check the installed ${executable} CLI`, category: executable === 'git' ? 'Git' : executable === 'node' ? 'Node' : 'General', aliases: [`${executable} version`], risk: 'safe', parameters: [], arguments: ['--version'], executable, requiresRepository: false, supportedPlatforms: ['darwin', 'win32', 'linux'], mutation: false, examples: [`${executable} --version`] })
 for (const [id, title, executable, args] of [['system.pwd', 'Print Working Directory', 'pwd', []], ['system.list', 'List Directory', 'ls', ['-la']]] as const) definitions.push({ id, title, description: 'Inspect the selected workspace or home directory', category: 'System', aliases: [id === 'system.pwd' ? 'pwd' : 'ls'], risk: 'safe', parameters: [], arguments: [...args], executable, requiresRepository: false, supportedPlatforms: ['darwin', 'linux'], mutation: false, examples: [executable + ' ' + args.join(' ')] })
-function pack(id: string, title: string, description: string, category: Definition['category'], executable: string, args: Argument[], options: Partial<Pick<Definition, 'parameters' | 'risk' | 'mutation' | 'network' | 'supportedPlatforms' | 'projectFile' | 'aliases' | 'requiresRepository' | 'interactive'>> = {}) {
+function pack(id: string, title: string, description: string, category: Definition['category'], executable: string, args: Argument[], options: Partial<Pick<Definition, 'parameters' | 'risk' | 'mutation' | 'network' | 'supportedPlatforms' | 'projectFile' | 'aliases' | 'requiresRepository' | 'interactive' | 'successExitCodes'>> = {}) {
   definitions.push({ id, title, description, category, executable, arguments: args, parameters: [], risk: 'safe', mutation: false, aliases: [id.replaceAll('.', ' ')], supportedPlatforms: ['darwin', 'win32', 'linux'], requiresRepository: !!options.projectFile, examples: [displayCommand(executable, args.map((arg) => typeof arg === 'string' ? arg : `<${arg.param}>`))], ...options })
 }
 pack('npm.version', 'npm Version', 'Show the installed npm CLI version', 'Node', 'npm', ['--version'], { supportedPlatforms: ['darwin', 'linux'] })
@@ -60,6 +61,26 @@ pack('system.port', 'Inspect Listening Port', 'List TCP listeners for a numeric 
 pack('system.ports', 'List TCP Listening Ports', 'Show all TCP listening ports with process names and PIDs', 'System', 'lsof', ['-nP', '-iTCP', '-sTCP:LISTEN'], { supportedPlatforms: ['darwin', 'linux'], aliases: ['all listening ports', 'tcp ports', 'xem tat ca TCP listening ports', 'xem tất cả cổng TCP'] })
 pack('system.port.process', 'Find Process Using Port', 'Show processes using a TCP or UDP port, including their PIDs', 'System', 'lsof', ['-nP', { flag: '-i:', param: 'port' }], { parameters: [name('port', 'Port', '3000')], supportedPlatforms: ['darwin', 'linux'], aliases: ['process using port', 'pid port', 'xem process dang su dung port', 'xem process đang sử dụng port'] })
 pack('system.port.stop', 'Stop Process on Port', 'Stop a TCP listener with SIGTERM after reviewing its PID; defaults to port 3000', 'System', 'kill', ['-TERM', { param: 'pid' }], { parameters: [name('port', 'TCP Port', '3000'), { key: 'pid', label: 'PID (optional, required for multiple listeners)', type: 'string', required: false, defaultValue: '' }], risk: 'dangerous', mutation: true, supportedPlatforms: ['darwin', 'linux'], aliases: ['kill port', 'free port', 'stop process port 3000', 'dung process dang chiem port', 'dừng process đang chiếm port'] })
+const sshPlatforms: Definition['supportedPlatforms'] = ['darwin', 'linux']
+const sshConnection = [name('host', 'Hostname or Alias', 'github.com'), name('user', 'SSH User', 'git'), name('port', 'SSH Port', '22')]
+pack('ssh.connect', 'Connect with SSH', 'Open an interactive SSH connection using your OpenSSH configuration', 'SSH', 'ssh', ['-p', param('port'), '-l', param('user'), param('host')], { parameters: sshConnection, supportedPlatforms: sshPlatforms, interactive: true, mutation: true, risk: 'caution', network: true, aliases: ['ssh login', 'connect server', 'kết nối SSH'] })
+pack('ssh.test', 'Test SSH Authentication', 'Test a direct hostname with strict host-key checking and no interactive prompts', 'SSH', 'ssh', ['-F', '/dev/null', '-T', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=10', '-o', 'ConnectionAttempts=1', '-o', 'ProxyCommand=none', '-o', 'ProxyJump=none', '-o', 'PermitLocalCommand=no', '-o', 'RemoteCommand=none', '-p', param('port'), '-l', param('user'), param('host')], { parameters: sshConnection.map((field) => field.key === 'host' ? { ...field, label: 'Hostname or IP' } : field), supportedPlatforms: sshPlatforms, mutation: true, risk: 'caution', network: true, aliases: ['ssh -T', 'test ssh', 'kiểm tra SSH'] })
+pack('ssh.version', 'OpenSSH Version', 'Show the installed OpenSSH version', 'SSH', 'ssh', ['-V'], { supportedPlatforms: sshPlatforms })
+pack('ssh.help', 'OpenSSH Help', 'Show OpenSSH command-line usage', 'SSH', 'ssh', ['-h'], { supportedPlatforms: sshPlatforms, successExitCodes: [0, 255] })
+pack('ssh.key.generate', 'Generate SSH Key', 'Create an ed25519 key pair; enter the passphrase in the terminal', 'SSH', 'ssh-keygen', [], { parameters: [name('keyName', 'Key Basename', 'id_ed25519_devcommand'), { key: 'comment', label: 'Public Comment', type: 'string', required: false, defaultValue: '' }], supportedPlatforms: sshPlatforms, mutation: true, risk: 'caution', interactive: true, aliases: ['ssh-keygen', 'generate key', 'tạo SSH key'] })
+pack('ssh.key.fingerprint', 'Show SSH Fingerprint', 'Show the SHA256 fingerprint of a public key in your SSH directory', 'SSH', 'ssh-keygen', [], { parameters: [name('keyName', 'Key Basename', 'id_ed25519')], supportedPlatforms: sshPlatforms, aliases: ['ssh-keygen -lf', 'fingerprint'] })
+pack('ssh.agent.list', 'List SSH Agent Identities', 'List fingerprints in the current OS SSH agent', 'SSH', 'ssh-add', ['-l', '-E', 'sha256'], { supportedPlatforms: sshPlatforms, successExitCodes: [0, 1], aliases: ['ssh-add -l', 'agent keys'] })
+pack('ssh.agent.public', 'List SSH Agent Public Keys', 'List public keys currently loaded in the OS SSH agent', 'SSH', 'ssh-add', ['-L'], { supportedPlatforms: sshPlatforms, successExitCodes: [0, 1], aliases: ['ssh-add -L'] })
+pack('ssh.agent.add', 'Load SSH Key into Agent', 'Load a validated SSH identity into the OS agent for a selected lifetime', 'SSH', 'ssh-add', [], { parameters: [name('keyName', 'Key Basename', 'id_ed25519'), { ...choice('lifetimeSeconds', 'Key lifetime', [...sshAgentLifetimes], '3600'), required: false, optionLabels: sshAgentLifetimeLabels }], supportedPlatforms: sshPlatforms, mutation: true, risk: 'caution', interactive: true, aliases: ['ssh-add', 'load identity'] })
+pack('ssh.agent.remove', 'Remove SSH Key from Agent', 'Remove one selected identity from the shared SSH agent without deleting its files', 'SSH', 'ssh-add', [], { parameters: [name('keyName', 'Key Basename', 'id_ed25519')], supportedPlatforms: sshPlatforms, mutation: true, risk: 'caution', interactive: true, aliases: ['ssh-add -d', 'remove agent key'] })
+pack('ssh.agent.clear', 'Remove All SSH Agent Keys', 'Remove every identity from the shared SSH agent without deleting key files', 'SSH', 'ssh-add', ['-D'], { supportedPlatforms: sshPlatforms, mutation: true, risk: 'dangerous', interactive: true, aliases: ['ssh-add -D', 'clear agent', 'remove all keys'] })
+const sshExamples: Record<string, string[]> = {
+  'ssh.key.generate': ['ssh-keygen -t ed25519 -a 64 -C "work-key" -f ~/.ssh/id_ed25519_work'],
+  'ssh.key.fingerprint': ['ssh-keygen -E sha256 -lf ~/.ssh/id_ed25519.pub'],
+  'ssh.agent.add': ['ssh-add ~/.ssh/id_ed25519', 'ssh-add -t 600 ~/.ssh/id_ed25519', 'ssh-add -t 3600 ~/.ssh/id_ed25519', 'ssh-add -t 28800 ~/.ssh/id_ed25519', 'ssh-add -t 86400 ~/.ssh/id_ed25519'],
+  'ssh.agent.remove': ['ssh-add -d ~/.ssh/id_ed25519.pub'],
+}
+for (const definition of definitions) if (sshExamples[definition.id]) definition.examples = sshExamples[definition.id]
 const permissionPlatforms: Definition['supportedPlatforms'] = ['darwin', 'linux']
 const target = (defaultValue = '') => name('target', 'Repository-relative Path', defaultValue)
 const aclTool = process.platform === 'darwin' ? 'chmod' : 'setfacl'
@@ -97,6 +118,28 @@ for (const [id, title, executable, resume] of [
   pack(`ai.${id}.start`, `Start ${title}`, `Open ${title} interactively in the selected repository`, 'AI Developer CLI', executable, [], { ...options, interactive: true, requiresRepository: true, risk: 'caution', mutation: true, network: true })
   pack(`ai.${id}.resume`, `Resume ${title}`, `Continue the most recent ${title} session in a terminal`, 'AI Developer CLI', executable, [...resume], { ...options, interactive: true, requiresRepository: true, risk: 'caution', mutation: true, network: true })
 }
+// Long-running tunnels and account changes use an explicitly confirmed terminal session.
+for (const [action, title, args, parameters] of [
+  ['quick', 'Start Quick Tunnel', ['tunnel', '--url', param('originUrl')], [name('originUrl', 'Local service URL', 'http://localhost:3000')]],
+  ['run', 'Run Cloudflare Tunnel', ['tunnel', 'run', param('tunnel')], [name('tunnel', 'Tunnel name or UUID', 'my-tunnel')]],
+  ['login', 'Cloudflare Tunnel Login', ['tunnel', 'login'], []],
+  ['create', 'Create Cloudflare Tunnel', ['tunnel', 'create', param('tunnel')], [name('tunnel', 'Tunnel name', 'my-tunnel')]],
+] as [string, string, Argument[], CommandParameter[]][]) pack(`cloudflared.${action}`, title, action === 'quick' ? 'Expose a local HTTP service through a temporary public URL' : action === 'run' ? 'Run a named tunnel using your existing cloudflared configuration' : action === 'login' ? 'Authenticate in your browser and save the Cloudflare account certificate' : 'Create a named tunnel and its local credential file', 'General', 'cloudflared', args, { parameters, interactive: true, mutation: true, network: true, risk: 'caution', supportedPlatforms: ['darwin', 'linux'] })
+pack('cloudflared.list', 'List Cloudflare Tunnels', 'List tunnels in your authenticated Cloudflare account', 'General', 'cloudflared', ['tunnel', 'list'], { network: true })
+pack('cloudflared.info', 'Cloudflare Tunnel Info', 'Inspect active connectors for a named tunnel', 'General', 'cloudflared', ['tunnel', 'info', param('tunnel')], { parameters: [name('tunnel', 'Tunnel name or UUID', 'my-tunnel')], network: true })
+pack('cloudflared.version', 'Cloudflared Version', 'Show the installed cloudflared version', 'General', 'cloudflared', ['--version'])
+pack('cloudflared.help', 'Cloudflare Tunnel Help', 'Show Cloudflare Tunnel CLI usage', 'General', 'cloudflared', ['tunnel', '--help'])
+for (const [action, title, args, parameters] of [
+  ['http', 'Start ngrok HTTP Tunnel', ['http', param('port')], [name('port', 'Local port', '3000')]],
+  ['http.url', 'Start ngrok HTTP URL', ['http', param('originUrl')], [name('originUrl', 'Local service URL', 'http://localhost:3000')]],
+  ['http.domain', 'Start ngrok Custom Domain', ['http', param('port'), '--url', param('publicUrl')], [name('port', 'Local port', '3000'), name('publicUrl', 'Public endpoint URL', 'https://example.ngrok.app')]],
+  ['tcp', 'Start ngrok TCP Tunnel', ['tcp', param('port')], [name('port', 'Local port', '5432')]],
+  ['start', 'Start Named ngrok Tunnel', ['start', param('tunnel')], [name('tunnel', 'Configured endpoint name', 'my-app')]],
+  ['start.all', 'Start All ngrok Tunnels', ['start', '--all'], []],
+] as [string, string, Argument[], CommandParameter[]][]) pack(`ngrok.${action}`, title, action.startsWith('start') ? 'Run endpoints defined in your existing ngrok configuration' : 'Forward traffic through ngrok to a local service', 'General', 'ngrok', args, { parameters, interactive: true, mutation: true, network: true, risk: 'caution', supportedPlatforms: ['darwin', 'linux'] })
+pack('ngrok.config.check', 'Check ngrok Config', 'Validate the existing ngrok agent configuration', 'General', 'ngrok', ['config', 'check'])
+pack('ngrok.version', 'ngrok Version', 'Show the installed ngrok agent version', 'General', 'ngrok', ['version'])
+pack('ngrok.help', 'ngrok Help', 'Show ngrok CLI commands and usage', 'General', 'ngrok', ['help'])
 export const registry: readonly Definition[] = definitions
 export function getDefinition(id: string): Definition {
   const definition = registry.find((entry) => entry.id === id)
@@ -112,6 +155,19 @@ export function validateParams(definition: Definition, input: Record<string, unk
   const result = z.object(fields).strict().safeParse(input)
   if (!result.success) throw new PublicError('Fill in all required parameters using valid values.')
   const values = result.data as Record<string, string>
+  if (definition.id.startsWith('cloudflared.') || definition.id.startsWith('ngrok.')) {
+    if (values.tunnel && !/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(values.tunnel)) throw new PublicError('Use a tunnel name or UUID without options, paths or whitespace.')
+    if (values.publicUrl) {
+      let valid = false
+      try { const url = new URL(values.publicUrl); valid = url.protocol === 'https:' && /^[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/.test(url.hostname) && !url.username && !url.password && !url.port && url.pathname === '/' && !url.search && !url.hash } catch { /* Invalid endpoint is rejected below. */ }
+      if (!valid || /[\s\\]/.test(values.publicUrl)) throw new PublicError('Use an HTTPS endpoint URL without credentials, a port, path or query parameters.')
+    }
+    if (values.originUrl) {
+      let valid = false
+      try { const url = new URL(values.originUrl); valid = ['http:', 'https:'].includes(url.protocol) && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) && !url.username && !url.password && !url.search && !url.hash } catch { /* Invalid URL is rejected below. */ }
+      if (!valid || /[\s\\]/.test(values.originUrl)) throw new PublicError('Use a local HTTP(S) URL, such as http://localhost:3000, without credentials or query parameters.')
+    }
+  }
   if (definition.category === 'Permissions') {
     const identity = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,79}$/
     if (values.mode?.startsWith('-')) throw new PublicError('Specify who to change, for example u-w or go-r.')
@@ -119,6 +175,12 @@ export function validateParams(definition: Definition, input: Record<string, unk
     if (values.owner && (!/^[^:]+(?::[^:]+)?$/.test(values.owner) || !values.owner.split(':').every((part) => identity.test(part)))) throw new PublicError('Use an OS owner or owner:group without options or whitespace.')
     if (values.identity && !identity.test(values.identity)) throw new PublicError('Use a valid OS user or group name.')
     if (values.index && !/^(?:0|[1-9]\d{0,3})$/.test(values.index)) throw new PublicError('Use a non-negative ACL entry index.')
+  }
+  if (definition.category === 'SSH') {
+    if (values.host && !/^(?:[A-Za-z0-9][A-Za-z0-9_.-]{0,252}|[a-fA-F0-9:]+)$/.test(values.host)) throw new PublicError('Use a hostname, IPv4/IPv6 address or SSH alias without options, whitespace or commands.')
+    if (values.user && !/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$/.test(values.user)) throw new PublicError('Use a valid SSH username.')
+    if (values.keyName && (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(values.keyName) || values.keyName.endsWith('.pub'))) throw new PublicError('Use a key basename from your SSH directory, without a path or .pub suffix.')
+    if (values.comment && values.comment.length > 120) throw new PublicError('Keep the public comment within 120 characters.')
   }
   if (values.pid && (!/^[1-9]\d{0,9}$/.test(values.pid) || Number(values.pid) <= 1 || Number(values.pid) > 2147483647)) throw new PublicError('Use a positive process PID greater than 1.')
   if (values.port && (!/^\d{1,5}$/.test(values.port) || Number(values.port) < 1 || Number(values.port) > 65535)) throw new PublicError('Use a numeric TCP port from 1 to 65535.')

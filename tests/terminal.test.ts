@@ -34,6 +34,27 @@ describe('terminal lifecycle', () => {
     expect(() => manager.create({ shellId, cols: 80, rows: 24 })).toThrow('maximum 8')
     await manager.closeAll()
   })
+  it.each(['interrupt', 'normal exit'])('returns a launched program to a usable shell after %s', async (mode) => {
+    const data: TerminalDataEvent[] = [], exits: TerminalExitEvent[] = []
+    const manager = new TerminalManager((event) => { data.push(event); manager.acknowledge(event.sessionId, event.sequence) }, (event) => exits.push(event))
+    const session = manager.startProgram({ executable: '/bin/sh', argv: ['-c', 'printf "PROGRAM_READY\\n"; ' + (mode === 'interrupt' ? 'sleep 30' : 'exit 0')], cwd: manager.getEnvironment().cwd, label: 'fixture', keepShell: true })
+    const wait = async (marker: string) => {
+      const deadline = Date.now() + 5000
+      while (!data.map((event) => event.data).join('').includes(marker)) {
+        if (Date.now() > deadline) throw new Error('Missing terminal output: ' + marker)
+        await new Promise((resolve) => setTimeout(resolve, 20))
+      }
+    }
+    try {
+      manager.resize(session.id, 100, 30)
+      await wait('PROGRAM_READY')
+      if (mode === 'interrupt') manager.write(session.id, '\x03')
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      manager.write(session.id, "printf 'SHELL_%s\\n' 'CONTINUES'\r")
+      await wait('SHELL_CONTINUES')
+      expect(exits).toHaveLength(0)
+    } finally { await manager.closeAll() }
+  })
   it('runs a real installed shell, streams data, resizes and closes its process', async () => {
     const data: TerminalDataEvent[] = [], exits: TerminalExitEvent[] = []
     const manager = new TerminalManager((event) => { data.push(event); manager.acknowledge(event.sessionId, event.sequence) }, (event) => exits.push(event))

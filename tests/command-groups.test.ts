@@ -18,6 +18,20 @@ describe('command families', () => {
     expect(groups[0].commands.map(actionLabel)).toEqual(['Help', 'Version', 'Start session', 'Resume latest'])
     expect(groups[3].commands.map(actionLabel)).toEqual(['Help', 'Start session', 'Resume latest'])
   })
+  it('groups all Cloudflare actions into one searchable family', () => {
+    const groups = groupCommands(catalog.filter((entry) => entry.id.startsWith('cloudflared.')))
+    expect(groups).toHaveLength(1)
+    expect(groups[0].title).toBe('Cloudflare Tunnel')
+    expect(groups[0].commands).toHaveLength(8)
+    expect(defaultCommand(groups[0]).id).toBe('cloudflared.quick')
+  })
+  it('groups nine ngrok actions under a single item', () => {
+    const groups = groupCommands(catalog.filter((entry) => entry.id.startsWith('ngrok.')))
+    expect(groups).toHaveLength(1)
+    expect(groups[0].title).toBe('ngrok')
+    expect(groups[0].commands).toHaveLength(9)
+    expect(defaultCommand(groups[0]).id).toBe('ngrok.http')
+  })
   it('keeps risk/search/favorite filtered groups limited to matching actions', () => {
     const safe = groupCommands(catalog.filter((entry) => entry.risk === 'safe'))
     expect(safe.flatMap((group) => group.commands).every((entry) => entry.risk === 'safe')).toBe(true)

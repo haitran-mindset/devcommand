@@ -16,6 +16,8 @@ export interface CommandGroup {
   commands: CommandSummary[]
 }
 const families: Family[] = [
+  { id: 'ngrok', title: 'ngrok', description: 'Publish local services and run configured endpoints', prefix: 'ngrok.', defaultId: 'ngrok.http' },
+  { id: 'cloudflared', title: 'Cloudflare Tunnel', description: 'Share local services and manage Cloudflare tunnels', prefix: 'cloudflared.', defaultId: 'cloudflared.quick' },
   { id: 'git.remotes', title: 'Git Remotes', description: 'View, add and update remote repositories', prefix: 'git.remote.', defaultId: 'git.remote.set-url' },
   { id: 'git.config', title: 'Git Config', description: 'Read and update Git configuration', prefix: 'git.config.', defaultId: 'git.config.list' },
   { id: 'git.branches', title: 'Git Branches', description: 'Create, switch and manage branches', prefix: 'git.branch.', defaultId: 'git.branch.list' },
@@ -30,6 +32,9 @@ const families: Family[] = [
   { id: 'system.ports', title: 'Ports & Processes', description: 'Find listeners and manage port processes', ids: ['system.ports', 'system.port', 'system.port.process', 'system.port.stop'], defaultId: 'system.ports' },
   { id: 'permissions.files', title: 'File Permissions', description: 'Inspect permissions, chmod and chown', ids: ['permissions.inspect', 'permissions.chmod', 'permissions.chown'], defaultId: 'permissions.inspect' },
   { id: 'permissions.acl', title: 'File ACL', description: 'View, grant and remove access entries', prefix: 'permissions.acl.', defaultId: 'permissions.acl.view' },
+  { id: 'ssh.connection', title: 'SSH', description: 'Connect and inspect OpenSSH', ids: ['ssh.connect', 'ssh.test', 'ssh.version', 'ssh.help'], defaultId: 'ssh.connect' },
+  { id: 'ssh.keys', title: 'SSH Keys', description: 'Generate keys and inspect fingerprints', prefix: 'ssh.key.', defaultId: 'ssh.key.generate' },
+  { id: 'ssh.agent', title: 'SSH Agent', description: 'Inspect, load and remove agent identities', prefix: 'ssh.agent.', defaultId: 'ssh.agent.list' },
   ...(['codex', 'claude', 'gemini', 'antigravity'] as const).map((tool) => ({ id: `ai.${tool}`, title: { codex: 'Codex', claude: 'Claude Code', gemini: 'Gemini CLI', antigravity: 'Antigravity CLI' }[tool], description: 'Start, resume and inspect the developer CLI', prefix: `ai.${tool}.`, defaultId: `ai.${tool}.start` })),
 ]
 export function commandFamily(command: Pick<CommandSummary, 'id' | 'title' | 'description'>): Omit<CommandGroup, 'commands'> {
@@ -50,12 +55,15 @@ export function defaultCommand(group: CommandGroup): CommandSummary {
   return group.commands.find((command) => command.id === group.defaultId) ?? group.commands[0]
 }
 const labels: Record<string, string> = {
+  'ngrok.http': 'HTTP by port', 'ngrok.http.url': 'HTTP local URL', 'ngrok.http.domain': 'HTTP custom domain', 'ngrok.tcp': 'TCP tunnel', 'ngrok.start': 'Start named endpoint', 'ngrok.start.all': 'Start all endpoints', 'ngrok.config.check': 'Check config', 'ngrok.version': 'Version', 'ngrok.help': 'Help',
+  'cloudflared.quick': 'Quick tunnel', 'cloudflared.run': 'Run named tunnel', 'cloudflared.login': 'Login', 'cloudflared.create': 'Create tunnel', 'cloudflared.list': 'List tunnels', 'cloudflared.info': 'Tunnel info', 'cloudflared.version': 'Version', 'cloudflared.help': 'Help',
   'git.remote.set-url': 'Change URL', 'git.remote.add': 'Add remote', 'git.remote.remove': 'Remove remote', 'git.remote.list': 'List remotes', 'git.remote.rename': 'Rename remote',
   'git.config.list': 'List config', 'git.config.get': 'Get value', 'git.config.set': 'Set value',
   'git.branch.list': 'List branches', 'git.branch.create': 'Create branch', 'git.branch.switch': 'Switch branch', 'git.branch.delete': 'Delete branch', 'git.branch.rename': 'Rename branch',
   'git.status': 'Status', 'git.diff': 'Diff', 'git.stage': 'Stage file', 'git.unstage': 'Unstage file', 'git.restore': 'Restore tracked files',
   'git.fetch': 'Fetch', 'git.pull': 'Pull', 'git.push': 'Push', 'git.log': 'Commit log', 'git.reset.soft': 'Reset soft', 'git.reset.mixed': 'Reset mixed', 'git.reset.hard': 'Reset hard',
   'git.stash.list': 'List stashes', 'git.stash.push': 'Save tracked changes', 'git.stash.apply': 'Apply stash', 'git.stash.pop': 'Pop stash', 'git.stash.drop': 'Drop stash',
+  'ssh.connect': 'Connect', 'ssh.test': 'Test authentication', 'ssh.version': 'Version', 'ssh.help': 'Help', 'ssh.key.generate': 'Generate ed25519 key', 'ssh.key.fingerprint': 'Show fingerprint', 'ssh.agent.list': 'List identities', 'ssh.agent.public': 'List public keys', 'ssh.agent.add': 'Load key into agent', 'ssh.agent.remove': 'Remove key from agent', 'ssh.agent.clear': 'Remove all keys',
   'node.version': 'Version', 'node.runtime': 'Runtime details', 'npm.version': 'Version', 'npm.dependencies': 'Dependencies', 'flutter.version': 'Version', 'flutter.doctor': 'Doctor', 'flutter.devices': 'Devices',
   'system.pwd': 'Working directory', 'system.list': 'List files', 'system.disk': 'Disk usage', 'system.ports': 'All TCP listeners', 'system.port': 'Inspect listening port', 'system.port.process': 'Find process', 'system.port.stop': 'Stop process',
   'permissions.inspect': 'Inspect permissions', 'permissions.chmod': 'Change permissions (chmod)', 'permissions.chown': 'Change owner (chown)', 'permissions.acl.view': 'View ACL', 'permissions.acl.add': 'Add entry', 'permissions.acl.remove': 'Remove entry', 'permissions.acl.clear': 'Clear ACL',

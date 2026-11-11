@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { conciseCommandDisplay, hasControlCharacters } from '../../shared/text'
 import type { BrowserWindow } from 'electron'
 import { z } from 'zod'
@@ -42,10 +43,10 @@ export function registerRuntime(handle: IpcHandle, window: BrowserWindow, store:
     }
   })
   const probe = new CliProbe()
-  const commands = new CommandService(store, workspace, runner, undefined, () => send('history:error', 'The command was started, but local history could not be saved. Check disk space and permissions.'), probe.run)
+  const ssh = new SshService((executable, argv, cwd) => probe.run(executable, argv, cwd), undefined, () => send('ssh:changed', null))
+  const commands = new CommandService(store, workspace, runner, undefined, () => send('history:error', 'The command was started, but local history could not be saved. Check disk space and permissions.'), probe.run, ssh)
   registerWorkspace(handle, window, store, workspace)
   const empty = (payload: unknown) => z.undefined().parse(payload)
-  const ssh = new SshService((executable, argv, cwd) => probe.run(executable, argv, cwd), undefined, () => send('ssh:changed', null))
   const docker = new DockerService(probe.run, workspace, runner)
   handle('docker:snapshot', (payload) => { empty(payload); return docker.snapshot() })
   handle('docker:preview', (payload) => docker.preview(dockerActionSchema.parse(payload)))
@@ -80,6 +81,7 @@ export function registerRuntime(handle: IpcHandle, window: BrowserWindow, store:
     if (!shell) throw new PublicError('Install zsh or bash to insert a command safely.')
     const draft = conciseCommandDisplay(prepared.preview.display)
     if (hasControlCharacters(draft) || draft.length > 8192) throw new PublicError('This command cannot be inserted safely into a terminal draft. Use managed execution instead.')
+    if (prepared.definition.id === 'ssh.key.generate' && !existsSync(prepared.process.cwd)) throw new PublicError('Use Run Command to create your SSH directory before inserting a key-generation command.')
     const session = terminals.create({ shellId: shell.id, cols: 100, rows: 24 }, prepared.process.cwd)
     terminals.setDraft(session.id, draft)
     return session

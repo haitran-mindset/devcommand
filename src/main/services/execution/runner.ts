@@ -7,9 +7,9 @@ import { childEnvironment } from '../terminal/environment'
 import { terminateTree } from '../../infrastructure/process/terminate'
 import { LineRedactor } from './redact'
 
-export interface ProcessDefinition { commandId: string; executable: string; argv: string[]; cwd: string; preview: string; timeoutMs?: number; secrets?: string[] }
+export interface ProcessDefinition { commandId: string; executable: string; argv: string[]; cwd: string; preview: string; timeoutMs?: number; secrets?: string[]; successExitCodes?: number[] }
 interface Job {
-  snapshot: ExecutionSnapshot; child: ChildProcess; sequence: number; received: number; stored: number;
+  snapshot: ExecutionSnapshot; successExitCodes: number[]; child: ChildProcess; sequence: number; received: number; stored: number;
   redactors: { stdout: LineRedactor; stderr: LineRedactor }; timer: ReturnType<typeof setTimeout>;
   termination?: Promise<void>; done: Promise<void>; finish: () => void; ended: boolean
 }
@@ -37,6 +37,7 @@ export class ManagedRunner {
     let finish!: () => void
     const done = new Promise<void>((resolve) => { finish = resolve })
     const job: Job = {
+      successExitCodes: definition.successExitCodes ?? [0],
       snapshot: { id, commandId: definition.commandId, preview: definition.preview, status: 'running', startedAt: new Date().toISOString(), exitCode: null, signal: null, output: [], truncated: false },
       child, sequence: 0, received: 0, stored: 0, redactors: { stdout: new LineRedactor(definition.secrets), stderr: new LineRedactor(definition.secrets) },
       timer: setTimeout(() => { void this.stop(job, 'timed-out') }, definition.timeoutMs ?? 10000), done, finish, ended: false
@@ -86,7 +87,7 @@ export class ManagedRunner {
     job.snapshot.exitCode = code
     job.snapshot.signal = signal
     job.snapshot.finishedAt = new Date().toISOString()
-    if (job.snapshot.status === 'running') job.snapshot.status = code === 0 && !job.snapshot.error ? 'succeeded' : 'failed'
+    if (job.snapshot.status === 'running') job.snapshot.status = code !== null && job.successExitCodes.includes(code) && !job.snapshot.error ? 'succeeded' : 'failed'
     this.emit({ type: 'status', executionId: job.snapshot.id, sequence: ++job.sequence, status: job.snapshot.status })
     job.finish()
     this.prune()

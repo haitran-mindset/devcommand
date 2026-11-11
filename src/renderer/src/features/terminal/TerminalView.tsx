@@ -30,7 +30,10 @@ export function TerminalView({ session, active }: { session: TerminalSession; ac
       const style = getComputedStyle(document.documentElement)
       terminal.options.theme = {
         background: style.getPropertyValue('--code').trim(), foreground: style.getPropertyValue('--foreground').trim(),
-        cursor: style.getPropertyValue('--purple').trim(), selectionBackground: '#8865ce66'
+        cursor: style.getPropertyValue('--purple').trim(), selectionBackground: '#8865ce66',
+        scrollbarSliderBackground: style.getPropertyValue('--scroll-thumb').trim(),
+        scrollbarSliderHoverBackground: style.getPropertyValue('--scroll-thumb-hover').trim(),
+        scrollbarSliderActiveBackground: style.getPropertyValue('--scroll-thumb-hover').trim()
       }
     }
     theme()

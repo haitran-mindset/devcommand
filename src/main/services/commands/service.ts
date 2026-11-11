@@ -12,12 +12,14 @@ import { PublicError, WorkspaceService, gitSafetyArgs, gitProbe } from '../works
 import { type Definition, displayCommand, expand, getDefinition, registry, validateParams } from './registry'
 import { ManagedRunner, type ProcessDefinition } from '../execution/runner'
 import { redact } from '../execution/redact'
+import type { SshAction, SshAgentLifetime } from '../../../shared/extended'
+import type { SshService } from '../ssh/service'
 import type { TerminalManager } from '../terminal/manager'
 import { permissionArguments, permissionTarget } from './permissions'
 import { inspectPortTarget } from './ports'
 import { findExecutable, type ProbeRun } from '../cli/probe'
 
-interface Prepared { definition: Definition; request: CommandRequest; process: ProcessDefinition; preview: CommandPreview; binding: string }
+interface Prepared { definition: Definition; request: CommandRequest; process: ProcessDefinition; preview: CommandPreview; binding: string; ssh?: { action: SshAction; token: string; expiresAt: string } }
 interface Confirmation { binding: string; state: string; expires: number }
 const digest = (value: string) => createHash('sha256').update(value).digest('hex')
 export class CommandService {
@@ -26,13 +28,13 @@ export class CommandService {
   private resources = new Map<string, string>()
   private busy = new Set<string>()
   private git: GitService
-  constructor(private store: SettingsStore, private workspace: WorkspaceService, private runner: ManagedRunner, private now = () => Date.now(), private persistenceFailure = () => {}, private portProbe?: ProbeRun) { this.git = new GitService(workspace) }
+  constructor(private store: SettingsStore, private workspace: WorkspaceService, private runner: ManagedRunner, private now = () => Date.now(), private persistenceFailure = () => {}, private portProbe?: ProbeRun, private ssh?: SshService) { this.git = new GitService(workspace) }
   search(input: SearchRequest): CommandSummary[] {
     const request = searchSchema.parse(input)
     const favorites = this.store.favorites()
     const terms = request.query.toLowerCase().trim().split(/\s+/).filter(Boolean)
     return registry.filter((definition) => terms.every((term) => `${commandFamily(definition).title} ${definition.title} ${definition.description} ${definition.category} ${definition.aliases.join(' ')}`.toLowerCase().includes(term)) && (request.category === 'all' || request.category === definition.category) && (request.risk === 'all' || request.risk === definition.risk) && (request.platform === 'all' || definition.supportedPlatforms.includes(request.platform)) && (!request.favoritesOnly || favorites.includes(definition.id)))
-      .map(({ executable, arguments: _arguments, mutation: _mutation, network: _network, projectFile: _projectFile, ...definition }) => { void _arguments; void _mutation; void _network; void _projectFile; return { ...definition, favorite: favorites.includes(definition.id), unavailableReason: !definition.supportedPlatforms.includes(process.platform as 'darwin' | 'win32' | 'linux') ? 'Unavailable on this operating system.' : !findExecutable(executable) ? `${executable} is not installed or absent from the application PATH.` : undefined } })
+      .map(({ executable, arguments: _arguments, mutation: _mutation, network: _network, projectFile: _projectFile, successExitCodes: _successExitCodes, ...definition }) => { void _arguments; void _mutation; void _network; void _projectFile; void _successExitCodes; return { ...definition, favorite: favorites.includes(definition.id), unavailableReason: !definition.supportedPlatforms.includes(process.platform as 'darwin' | 'win32' | 'linux') ? 'Unavailable on this operating system.' : !findExecutable(executable) ? `${executable} is not installed or absent from the application PATH.` : undefined } })
   }
   async prepare(input: CommandRequest): Promise<Prepared> {
     const request = commandRequestSchema.parse(input)
@@ -41,11 +43,25 @@ export class CommandService {
     const params = validateParams(definition, request.params)
     request.params = params
     if (definition.requiresRepository && !request.workspaceId) throw new PublicError('Choose a Git workspace before previewing this command.')
-    const repository = request.workspaceId ? await this.workspace.status(request.workspaceId) : undefined
+    const repository = request.workspaceId && definition.category !== 'SSH' ? await this.workspace.status(request.workspaceId) : undefined
     const cwd = repository?.rootPath ?? homedir()
     if (definition.category === 'Permissions' && repository?.bare) throw new PublicError('Choose a working-tree repository for permissions commands.')
     const executable = findExecutable(definition.executable)
     if (!executable) throw new PublicError(`${definition.executable} is not installed or absent from the application PATH.`)
+    if (definition.id === 'ssh.key.generate' || ['ssh.agent.add', 'ssh.agent.remove', 'ssh.agent.clear'].includes(definition.id)) {
+      const action = await this.sshAction(request)
+      const preview = await this.ssh!.preview(action)
+      const path = params.keyName ? join(this.ssh!.directory, params.keyName) : this.ssh!.directory
+      const argv = action.kind === 'key.generate' ? ['-t', 'ed25519', '-a', '64', '-C', action.comment, '-f', path] : action.kind === 'agent.add' ? (action.lifetimeSeconds === 'unlimited' ? [path] : ['-t', action.lifetimeSeconds ?? '3600', path]) : action.kind === 'agent.remove' ? ['-d', join(this.ssh!.directory, action.publicKeyName)] : ['-D']
+      return { definition, request, process: { commandId: definition.id, executable, argv, cwd: action.kind === 'agent.clear' ? homedir() : this.ssh!.directory, preview: preview.display }, preview: { display: preview.display, cwd: action.kind === 'agent.clear' ? homedir() : this.ssh!.directory, risk: definition.risk, consequences: preview.consequences }, binding: '', ssh: { action, token: preview.token, expiresAt: preview.expiresAt } }
+    }
+    let sshFingerprintArgs: string[] | undefined
+    if (definition.id === 'ssh.key.fingerprint') {
+      if (!this.ssh) throw new PublicError('SSH metadata is unavailable. Restart DevCommand.')
+      await this.ssh.publicKey(params.keyName + '.pub')
+      sshFingerprintArgs = ['-E', 'sha256', '-lf', join(this.ssh.directory, params.keyName + '.pub')]
+    }
+
     if (definition.projectFile) { try { if (!lstatSync(join(cwd, definition.projectFile)).isFile()) throw new Error() } catch { throw new PublicError(`The selected workspace requires ${definition.projectFile}.`) } }
     if (repository?.bare && /^(git\.(status|diff|restore|reset\.|stash\.|stage|unstage|branch.switch|pull))/.test(definition.id)) throw new PublicError('This operation requires a working tree; the selected repository is bare.')
     if (repository?.unborn && /git\.(reset\.|restore|stash\.|branch.create|log)/.test(definition.id)) throw new PublicError('This repository has no commits yet. Create the initial commit outside DevCommand first.')
@@ -96,14 +112,29 @@ export class CommandService {
     }
     const permission = definition.category === 'Permissions' ? permissionTarget(cwd, params.target, definition.mutation) : undefined
     const portTarget = definition.id === 'system.port.stop' ? await inspectPortTarget(this.portProbe, params.port, params.pid) : undefined
-    const argv = permission ? permissionArguments(definition, params, permission.target) : portTarget ? ['-TERM', portTarget.pid] : definition.id === 'git.unstage' && repository?.unborn ? ['rm', '--cached', '--force', '--', params.path] : definition.id === 'git.unstage' && originalPath ? ['restore', '--staged', '--', params.path, originalPath] : expand(definition, params)
+    const argv = sshFingerprintArgs ?? (permission ? permissionArguments(definition, params, permission.target) : portTarget ? ['-TERM', portTarget.pid] : definition.id === 'git.unstage' && repository?.unborn ? ['rm', '--cached', '--force', '--', params.path] : definition.id === 'git.unstage' && originalPath ? ['restore', '--staged', '--', params.path, originalPath] : expand(definition, params))
     const executionArgs = definition.executable === 'git' && definition.requiresRepository ? [...gitSafetyArgs, ...argv] : argv
     const safeParams = { ...params }
     for (const parameter of definition.parameters) if (parameter.sensitive) safeParams[parameter.key] = '[REDACTED]'
-    const safeArgs = permission || portTarget ? argv : definition.executable === 'git' && definition.requiresRepository ? [...gitSafetyArgs, ...(definition.id === 'git.unstage' && (repository?.unborn || originalPath) ? argv : expand(definition, safeParams))] : expand(definition, safeParams)
+    const safeArgs = sshFingerprintArgs || permission || portTarget ? argv : definition.executable === 'git' && definition.requiresRepository ? [...gitSafetyArgs, ...(definition.id === 'git.unstage' && (repository?.unborn || originalPath) ? argv : expand(definition, safeParams))] : expand(definition, safeParams)
     const display = redact(displayCommand(definition.executable, safeArgs))
     const consequences: string[] = []
     if (permission) consequences.push(`Target: ${permission.target}. Current mode: ${permission.mode}; owner UID:GID: ${permission.owner}.`, definition.mutation ? 'Changes this path only, without recursion or automatic sudo. Access changes may affect your tools and collaborators.' : 'Reads permissions without changing this path.')
+    else if (definition.category === 'SSH') {
+      if (definition.id === 'ssh.connect') consequences.push('Opens an interactive SSH connection using your OpenSSH configuration and OS agent. Enter any password or passphrase in the terminal.', 'Session input/output is not saved in Execution History. No remote command is submitted by DevCommand.')
+      else if (definition.id === 'ssh.test') consequences.push('Tests a direct hostname/IP, bypassing SSH config aliases, proxy and local commands. Unknown/changed host keys are refused; prompts are disabled.', 'Git providers may return a nonzero exit code after successful authentication. Read the diagnostic output instead of relying only on the exit code.')
+      else if (definition.id.startsWith('ssh.agent.')) consequences.push('Reads the OS agent without loading, removing or changing identities. No identities (exit 1) is an empty result; an unreachable agent remains an error.')
+    }
+    else if (definition.id.startsWith('ngrok.')) {
+      if (definition.interactive) consequences.push('Publishes the selected service or configured endpoints through your ngrok account. Access follows your existing ngrok endpoint policy.', 'Uses your existing ngrok credentials and configuration. Some endpoint types or custom domains require account entitlements.', 'Ctrl+C stops the agent and returns to the shell in this tab. Session output is not saved in Execution History.')
+      else consequences.push('Inspects the installed ngrok agent or validates its configuration without starting an endpoint.')
+    }
+    else if (definition.id.startsWith('cloudflared.')) {
+      if (['cloudflared.quick', 'cloudflared.run'].includes(definition.id)) consequences.push('Publishes the configured service through Cloudflare. Anyone allowed by your tunnel access settings may reach it.', 'Runs in the terminal until stopped with Ctrl+C or the session is closed. Tunnel URLs and session output are not saved in Execution History.')
+      else if (definition.id === 'cloudflared.login') consequences.push('Opens Cloudflare authentication in your browser. cloudflared saves its account certificate in its own configuration directory.')
+      else if (definition.id === 'cloudflared.create') consequences.push('Creates a tunnel in your Cloudflare account and writes its credentials to the cloudflared configuration directory.')
+      else if (definition.network) consequences.push('Reads tunnel metadata from your Cloudflare account using your existing cloudflared credentials.')
+    }
     else if (definition.interactive) consequences.push('Opens the installed AI CLI in an interactive terminal for the selected repository. It may read project instructions, contact its provider and edit files using its own permission settings.', 'No prompt is submitted by DevCommand. Session input/output is not saved in Execution History; the CLI manages its own session data.')
     else if (portTarget) consequences.push(`Send SIGTERM to PID ${portTarget.pid}, listening on TCP port ${params.port}.`, redact(`Process: ${portTarget.identity}`), 'Unsaved work in this process may be lost. SIGTERM requests a normal shutdown; it does not force-kill the process.')
     else if (definition.mutation) consequences.push(definition.category === 'Flutter' ? 'Flutter may initialize or update SDK caches, contact SDK/device services and trigger OS permission prompts. Analytics are suppressed for this invocation; existing analytics preferences are unchanged.' : `This ${definition.risk} operation changes ${params.scope === 'global' ? 'your global Git configuration' : 'the selected repository'}.`)
@@ -124,11 +155,12 @@ export class CommandService {
     if (definition.network && definition.category === 'Git') consequences.push('Connects to the configured remote using your local Git/SSH authentication. Network commands may take up to 60 seconds.')
     if (repository && !repository.clean && definition.mutation && !portTarget && !permission && !definition.interactive) consequences.push('This working tree contains local changes. Review and back up your work before continuing.')
     if (definition.executable === 'git' && definition.requiresRepository) consequences.push('Managed Git disables hooks, fsmonitor, external/file transports and interactive paging.')
-    return { definition, request, process: { commandId: definition.id, executable, argv: executionArgs, cwd, preview: display, timeoutMs: definition.network ? 60000 : 10000, secrets: definition.parameters.filter((parameter) => parameter.sensitive).map((parameter) => params[parameter.key]) }, preview: { display, cwd, risk: definition.risk, consequences, repository }, binding: digest(JSON.stringify([definition.id, params, request.workspaceId ?? null, executable, portTarget, permission?.state])) }
+    return { definition, request, process: { commandId: definition.id, executable, argv: executionArgs, cwd, preview: display, timeoutMs: definition.network ? 60000 : 10000, successExitCodes: definition.successExitCodes, secrets: definition.parameters.filter((parameter) => parameter.sensitive).map((parameter) => params[parameter.key]) }, preview: { display, cwd, risk: definition.risk, consequences, repository }, binding: digest(JSON.stringify([definition.id, params, request.workspaceId ?? null, executable, portTarget, permission?.state])) }
   }
   private async state(request: CommandRequest): Promise<string> {
     const definition = getDefinition(request.commandId)
     const params = validateParams(definition, request.params)
+    if (definition.category === 'SSH') return digest(JSON.stringify(params))
     if (definition.category === 'Permissions') {
       if (!request.workspaceId) throw new PublicError('Choose a repository before inspecting permissions.')
       const root = (await this.workspace.resolve(request.workspaceId)).rootPath
@@ -148,6 +180,10 @@ export class CommandService {
   }
   async preview(request: CommandRequest): Promise<CommandPreview> {
     const parsed = commandRequestSchema.parse(request)
+    if (parsed.commandId === 'ssh.key.generate' || ['ssh.agent.add', 'ssh.agent.remove', 'ssh.agent.clear'].includes(parsed.commandId)) {
+      const prepared = await this.prepare(parsed)
+      return { ...prepared.preview, confirmationToken: prepared.ssh!.token, expiresAt: prepared.ssh!.expiresAt }
+    }
     const before = getDefinition(parsed.commandId).mutation && (parsed.workspaceId || parsed.commandId === 'system.port.stop') ? await this.state(parsed) : undefined
     const prepared = await this.prepare(request)
     if (!prepared.definition.mutation) return prepared.preview
@@ -160,6 +196,7 @@ export class CommandService {
     return { ...prepared.preview, confirmationToken: token, expiresAt: new Date(expires).toISOString() }
   }
   private async resource(request: CommandRequest): Promise<string> {
+    if (request.commandId.startsWith('ssh.')) return 'ssh-cli'
     if (request.commandId === 'system.port.stop') return `port:${request.params.port}`
     if (request.params.scope === 'global') return 'global-config'
     if (!request.workspaceId) return 'home'
@@ -177,7 +214,7 @@ export class CommandService {
     try {
       if ([...this.requests.keys()].some((id) => this.resources.get(id) === lock && this.runner.list().some((job) => job.id === id && !job.finishedAt))) throw new PublicError('Wait for the current command in this workspace to finish.')
       const prepared = await this.prepare(request)
-      if (prepared.definition.interactive) throw new PublicError('Open this AI CLI in an interactive terminal instead of managed execution.')
+      if (prepared.definition.interactive) throw new PublicError('Open this command in an interactive terminal instead of managed execution.')
       if (prepared.definition.mutation) {
         if (!confirmation || confirmation.expires <= this.now() || confirmation.binding !== prepared.binding) throw new PublicError('Confirmation is missing, expired or does not match this request. Preview again.')
         if (confirmation.state !== await this.state(prepared.request)) throw new PublicError('Repository, configuration or process state changed after preview. Review a fresh preview before running.')
@@ -193,14 +230,32 @@ export class CommandService {
       return { executionId }
     } finally { this.busy.delete(lock) }
   }
+  private async sshAction(input: CommandRequest): Promise<SshAction> {
+    const request = commandRequestSchema.parse(input)
+    const params = validateParams(getDefinition(request.commandId), request.params)
+    if (!this.ssh) throw new PublicError('SSH metadata is unavailable. Restart DevCommand.')
+    if (request.commandId === 'ssh.key.generate') return { kind: 'key.generate', name: params.keyName, comment: params.comment }
+    if (request.commandId === 'ssh.agent.clear') return { kind: 'agent.clear' }
+    if (!['ssh.agent.add', 'ssh.agent.remove'].includes(request.commandId)) throw new PublicError('Unsupported SSH key action.')
+    const snapshot = await this.ssh.snapshot()
+    const key = snapshot.keys.find((key) => key.name === params.keyName + '.pub')
+    if (!key) throw new PublicError('This public key is unavailable. Refresh SSH Manager and check the key basename.')
+    return request.commandId === 'ssh.agent.remove' ? { kind: 'agent.remove', publicKeyName: key.name, fingerprint: key.fingerprint } : { kind: 'agent.add', publicKeyName: key.name, fingerprint: key.fingerprint, lifetimeSeconds: params.lifetimeSeconds as SshAgentLifetime }
+  }
   async launch(request: CommandRequest, token: string, terminals: TerminalManager) {
+    if (request.commandId === 'ssh.key.generate' || ['ssh.agent.add', 'ssh.agent.remove', 'ssh.agent.clear'].includes(request.commandId)) {
+      const action = await this.sshAction(request)
+      const result = await this.ssh!.execute(action, token, terminals, this.runner)
+      if (result.kind !== 'terminal') throw new PublicError('Unable to open the SSH terminal action.')
+      return result.session
+    }
     const confirmation = this.confirmations.get(token)
     this.confirmations.delete(token)
     const prepared = await this.prepare(request)
     if (!prepared.definition.interactive) throw new PublicError('This command is not an interactive CLI session.')
     if (!confirmation || confirmation.expires <= this.now() || confirmation.binding !== prepared.binding) throw new PublicError('Confirmation is missing, expired or does not match this session. Preview again.')
     if (confirmation.state !== await this.state(prepared.request)) throw new PublicError('The project changed after preview. Review the session again.')
-    return terminals.startProgram({ executable: prepared.process.executable, argv: prepared.process.argv, cwd: prepared.process.cwd, label: prepared.definition.title })
+    return terminals.startProgram({ executable: prepared.process.executable, argv: prepared.process.argv, cwd: prepared.process.cwd, label: prepared.definition.title, keepShell: true })
   }
   private readonly clearedHistory = new Set<string>()
   clearHistory() {

@@ -90,7 +90,7 @@ describe('AI Developer CLI command pack', () => {
     await expect(f.service.launch(request, preview.confirmationToken!, f.terminals)).rejects.toThrow('Confirmation')
     const fresh = await f.service.preview(request)
     await f.service.launch(request, fresh.confirmationToken!, f.terminals)
-    expect(f.startProgram).toHaveBeenCalledWith({ executable: '/usr/bin/codex', argv: [], cwd: f.repo, label: 'Start Codex' })
+    expect(f.startProgram).toHaveBeenCalledWith({ executable: '/usr/bin/codex', argv: [], cwd: f.repo, label: 'Start Codex', keepShell: true })
     await expect(f.service.launch(request, fresh.confirmationToken!, f.terminals)).rejects.toThrow('Confirmation')
     expect(f.startProgram).toHaveBeenCalledTimes(1)
   })
@@ -102,5 +102,42 @@ describe('AI Developer CLI command pack', () => {
     await expect(f.service.launch(request, preview.confirmationToken!, f.terminals)).rejects.toThrow('project changed')
     await expect(f.service.launch({ commandId: 'ai.codex.version', params: {} }, randomUUID(), f.terminals)).rejects.toThrow('not an interactive')
     expect(f.startProgram).not.toHaveBeenCalled()
+  })
+})
+
+describe('Cloudflare Tunnel command pack', () => {
+  it('validates local origins and tunnel identifiers before expanding fixed arguments', async () => {
+    const quick = getDefinition('cloudflared.quick')
+    for (const originUrl of ['http://localhost:3000', 'https://127.0.0.1:8443', 'http://[::1]:8080']) expect(validateParams(quick, { originUrl }).originUrl).toBe(originUrl)
+    for (const originUrl of ['file:///etc/passwd', 'http://example.com', 'http://user:pass@localhost:3000', 'http://localhost:3000?token=x', '--url', 'http://localhost:3000\n']) expect(() => validateParams(quick, { originUrl })).toThrow()
+    for (const tunnel of ['--token', 'foo bar', '../credentials', 'foo;id']) expect(() => validateParams(getDefinition('cloudflared.run'), { tunnel })).toThrow()
+    const f = fixture()
+    const request = { commandId: 'cloudflared.quick', params: { originUrl: 'http://localhost:3000' } }
+    const prepared = await f.service.prepare(request)
+    expect(prepared.process.argv).toEqual(['tunnel', '--url', 'http://localhost:3000'])
+    expect(prepared.preview.consequences.join(' ')).toContain('Ctrl+C')
+    await expect(f.service.launch(request, 'unconfirmed', f.terminals)).rejects.toThrow('Confirmation')
+    const preview = await f.service.preview(request)
+    await f.service.launch(request, preview.confirmationToken!, f.terminals)
+    expect(f.startProgram).toHaveBeenCalledWith(expect.objectContaining({ argv: ['tunnel', '--url', 'http://localhost:3000'] }))
+    await expect(f.service.launch(request, preview.confirmationToken!, f.terminals)).rejects.toThrow('Confirmation')
+  })
+})
+
+describe('ngrok command pack', () => {
+  it('validates ports, local URLs, endpoint names and custom domains', async () => {
+    for (const port of ['0', '65536', '--help', '3000;id']) expect(() => validateParams(getDefinition('ngrok.http'), { port })).toThrow()
+    for (const originUrl of ['file:///etc/passwd', 'http://example.com', 'http://user:pass@localhost:3000', 'http://localhost:3000?token=x']) expect(() => validateParams(getDefinition('ngrok.http.url'), { originUrl })).toThrow()
+    for (const publicUrl of ['--help', 'http://example.com', 'https://user:pass@example.com', 'https://example.com/path', 'https://example.com?token=x']) expect(() => validateParams(getDefinition('ngrok.http.domain'), { port: '3000', publicUrl })).toThrow()
+    expect(validateParams(getDefinition('ngrok.http.domain'), { port: '3000', publicUrl: 'https://demo.ngrok.app' }).publicUrl).toBe('https://demo.ngrok.app')
+    expect(() => validateParams(getDefinition('ngrok.start'), { tunnel: '--all' })).toThrow()
+    const f = fixture(), request = { commandId: 'ngrok.http', params: { port: '4321' } }
+    const prepared = await f.service.prepare(request)
+    expect(prepared.process.argv).toEqual(['http', '4321'])
+    expect(prepared.preview.consequences.join(' ')).toContain('Ctrl+C')
+    await expect(f.service.launch(request, 'unconfirmed', f.terminals)).rejects.toThrow('Confirmation')
+    const preview = await f.service.preview(request)
+    await f.service.launch(request, preview.confirmationToken!, f.terminals)
+    expect(f.startProgram).toHaveBeenCalledWith(expect.objectContaining({ argv: ['http', '4321'], keepShell: true }))
   })
 })

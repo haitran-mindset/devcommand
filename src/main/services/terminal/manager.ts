@@ -33,7 +33,17 @@ export class TerminalManager {
     if (!shell) throw new Error('Select an installed shell.')
     return this.spawnProgram(shell, process.platform === 'win32' ? [] : ['-i'], cwd, this.environment.shells.find((item) => item.id === options.shellId)!.label, options.cols, options.rows)
   }
-  startProgram(program: { executable: string; argv: string[]; cwd: string; label: string; onClosed?: () => void }): TerminalSession {
+  startProgram(program: { executable: string; argv: string[]; cwd: string; label: string; onClosed?: () => void; keepShell?: boolean }): TerminalSession {
+    if (program.keepShell && process.platform !== 'win32') {
+      const preferred = this.environment.paths.get(this.environment.defaultShellId)
+      const shell = preferred && /\/(?:zsh|bash|sh|dash|ksh)$/.test(preferred) ? preferred : [...this.environment.paths.values()].find((path) => /\/(?:zsh|bash|sh|dash|ksh)$/.test(path))
+      if (!shell) throw new Error('Select an installed shell.')
+      // A caught SIGINT keeps the wrapper alive; the foreground program still receives Ctrl+C.
+      // Quote every argument, then replace the wrapper with the normal interactive shell.
+      const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"
+      const command = [program.executable, ...program.argv].map(quote).join(' ')
+      return this.spawnProgram(shell, ['-i', '-c', `trap ':' INT; ${command}; exec ${quote(shell)} -i`], program.cwd, program.label, 100, 24, program.onClosed)
+    }
     return this.spawnProgram(program.executable, program.argv, program.cwd, program.label, 100, 24, program.onClosed)
   }
   private spawnProgram(executable: string, argv: string[], cwd: string, label: string, cols: number, rows: number, onClosed?: () => void): TerminalSession {

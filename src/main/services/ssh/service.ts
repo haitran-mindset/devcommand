@@ -1,7 +1,7 @@
 import { readdirSync, lstatSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir, userInfo } from 'node:os'
-import { sshActionSchema, type SshAction, type SshHost, type SshKey, type SshPreview, type SshResult, type SshSnapshot } from '../../../shared/extended'
+import { sshAgentLifetimeLabels, sshActionSchema, type SshAction, type SshHost, type SshKey, type SshPreview, type SshResult, type SshSnapshot } from '../../../shared/extended'
 import { Confirmations, hash } from '../../security/confirmations'
 import { PublicError } from '../../security/errors'
 import { findExecutable, type ProbeRun } from '../cli/probe'
@@ -78,6 +78,12 @@ export class SshService {
     if (!validated.success || validated.data.kind !== 'host.update' || host.reason?.includes('IdentityFile') || host.reason?.includes('Duplicate')) throw new PublicError('Connection diagnostics require literal host/user/port and at most one identity from this SSH directory.')
     return { ...host, ...validated.data }
   }
+  private async agentState() {
+    const result = await this.probe('ssh-add', ['-l', '-E', 'sha256'])
+    if (result.code !== 0 && result.code !== 1) throw new PublicError('No reachable SSH agent. Start your OS agent and refresh.')
+    const identities = result.code === 0 ? result.stdout.trim().split('\n').filter(Boolean).sort() : []
+    return { identities, state: hash(JSON.stringify([process.env.SSH_AUTH_SOCK ?? '', identities])) }
+  }
   private async prepare(input: SshAction): Promise<Prepared> {
     const action = sshActionSchema.parse(input)
     checkDirectory(this.directory)
@@ -100,9 +106,25 @@ export class SshService {
       if (key.fingerprint !== action.fingerprint || !key.privateAvailable) throw new PublicError('The key changed, its private pair is missing/symlinked, or its permissions are unsafe. Refresh and check it before loading.')
       executable = findExecutable('ssh-add'); if (!executable) throw new PublicError('ssh-add is unavailable.')
       const path = join(this.directory, action.publicKeyName.slice(0, -4))
-      argv = ['-t', '3600', path]; display = displayCommand('ssh-add', argv)
-      targetState = JSON.stringify([key.fingerprint, metadata(path)])
-      consequences.push('Loads this key into the OS agent for one hour. An existing agent must be available.', 'Enter any passphrase in the terminal. The application never reads the private key file content or saves the passphrase.')
+      argv = action.lifetimeSeconds === 'unlimited' ? [path] : ['-t', action.lifetimeSeconds ?? '3600', path]; display = displayCommand('ssh-add', argv)
+      const agent = await this.agentState()
+      targetState = JSON.stringify([key.fingerprint, metadata(path), agent.state])
+      consequences.push(action.lifetimeSeconds === 'unlimited' ? 'Loads this key without an explicit expiry. It stays until removed or the agent restarts; an agent-wide default lifetime may still apply.' : `Loads this key into the OS agent for ${sshAgentLifetimeLabels[action.lifetimeSeconds ?? '3600']}. An existing agent must be available.`, 'Enter any passphrase in the terminal. The application never reads the private key file content or saves the passphrase.')
+    } else if (action.kind === 'agent.remove' || action.kind === 'agent.clear') {
+      executable = findExecutable('ssh-add'); if (!executable) throw new PublicError('ssh-add is unavailable.')
+      const agent = await this.agentState()
+      if (action.kind === 'agent.remove') {
+        const key = await this.key(action.publicKeyName)
+        if (key.fingerprint !== action.fingerprint) throw new PublicError('The selected public key changed. Refresh before removing it from the agent.')
+        if (!agent.identities.some((line) => line.split(/\s+/).includes(key.fingerprint))) throw new PublicError('This key is not currently loaded in the agent. Refresh the identities list.')
+        argv = ['-d', join(this.directory, action.publicKeyName)]
+        targetState = JSON.stringify([key.fingerprint, metadata(join(this.directory, action.publicKeyName)), agent.state])
+        consequences.push(`Removes ${action.publicKeyName} (${key.fingerprint}) from the current shared SSH agent.`, 'Repositories using this identity may require you to load it again. The key files and repository SSH configuration are not changed.')
+      } else {
+        argv = ['-D']; targetState = agent.state
+        consequences.push(`Removes all ${agent.identities.length} identities from the current shared SSH agent.`, 'This affects every repository or application using this agent. Key files, SSH config and Git remotes are not changed; you can load the keys again later.')
+      }
+      display = displayCommand('ssh-add', argv)
     } else if (action.kind === 'connection.test') {
       const host = this.host(action, config)
       executable = findExecutable('ssh'); if (!executable) throw new PublicError('OpenSSH ssh is unavailable.')
@@ -132,14 +154,14 @@ export class SshService {
       const executionId = runner.execute({ commandId: 'ssh.connection.test', executable: prepared.executable!, argv: prepared.argv!, cwd: homedir(), preview: prepared.display, timeoutMs: 15000 })
       return { kind: 'execution', executionId }
     }
-    checkDirectory(this.directory, true)
+    checkDirectory(this.directory, action.kind === 'key.generate')
     if (action.kind === 'key.generate') {
       // A second request may have finished its async preparation in the same turn.
       if (this.generating.has(action.name) || metadata(join(this.directory, action.name)) !== 'missing' || metadata(join(this.directory, action.name + '.pub')) !== 'missing') throw new PublicError('This key name is already in use. Choose a new basename.')
       this.generating.add(action.name)
     }
     try {
-      const session = terminals.startProgram({ executable: prepared.executable!, argv: prepared.argv!, cwd: this.directory, label: action.kind === 'key.generate' ? 'ssh-keygen' : 'ssh-add', onClosed: () => { if (action.kind === 'key.generate') this.generating.delete(action.name); this.changed() } })
+      const session = terminals.startProgram({ executable: prepared.executable!, argv: prepared.argv!, cwd: action.kind === 'agent.clear' ? homedir() : this.directory, label: action.kind === 'key.generate' ? 'ssh-keygen' : 'ssh-add', onClosed: () => { if (action.kind === 'key.generate') this.generating.delete(action.name); this.changed() } })
       return { kind: 'terminal', session }
     } catch { if (action.kind === 'key.generate') this.generating.delete(action.name); throw new PublicError('Unable to start the SSH terminal program. Check native terminal support and available tabs.') }
   }

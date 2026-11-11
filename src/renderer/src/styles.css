@@ -355,3 +355,14 @@ dialog::backdrop { background: #050711b8; }.confirmation-dialog { width: min(569
 .extended-form label { display: grid; gap: 7px; }
 .extended-form input { height: 28px; font-size: 12px; line-height: 1.4; width: 100%; min-width: 0; padding: 4px 8px; background: var(--input); border: 1px solid var(--border); border-radius: 7px; }
 .extended-notice { opacity: .75; line-height: 1.5; font-size: 12px; }
+
+/* Theme-aware scrollbars for panels, dialogs and terminal viewports. */
+:root { --scroll-thumb: #a0a5bd70; --scroll-thumb-hover: #7551d999; }
+.dark { --scroll-thumb: #737b9b66; --scroll-thumb-hover: #b38af3a6; }
+* { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
+*::-webkit-scrollbar { width: 7px; height: 7px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border: 2px solid transparent; background-clip: padding-box; border-radius: 10px; }
+*::-webkit-scrollbar-thumb:hover { background-color: var(--scroll-thumb-hover); }
+*::-webkit-scrollbar-corner { background: transparent; }
+.xterm .xterm-scrollable-element > .scrollbar > .slider { border-radius: 8px; }

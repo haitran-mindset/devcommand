@@ -236,3 +236,87 @@
 
 .command-center .command-item > .command-group-count { flex: 0 0 auto; display: grid; place-items: center; min-width: 18px; padding: 2px 4px; font-size: 9px; border-radius: 5px; color: var(--muted-foreground); background: color-mix(in srgb, var(--muted) 65%, transparent); }
 .command-action-picker { display: flex; align-items: center; flex-shrink: 0; gap: 9px; padding-top: 12px; }.command-action-picker > label { font-size: 11px; color: var(--muted-foreground); }.command-action-picker > span { font-size: 10px; white-space: nowrap; color: var(--muted-foreground); }.command-action-picker [data-slot=select-trigger] { width: 100%; }.row-favorite[aria-pressed=mixed] { color: var(--purple); }
+
+.ssh-agent-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; }.ssh-agent-summary code { display: block; margin-top: 4px; font-size: 10px; }.ssh-agent-controls { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }.ssh-agent-controls > label { display: flex; flex-direction: column; gap: 5px; min-width: 135px; font-size: 11px; }.ssh-agent-controls > label:first-child { flex: 1; max-width: 320px; }.ssh-agent-scope { font-size: 10px; color: var(--muted-foreground); margin-top: 10px; line-height: 1.6; }
+
+.library-search { display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin: 0 10px 8px; padding: 0 8px; height: 28px; border: 1px solid var(--input); border-radius: 6px; background: var(--background); color: var(--muted-foreground); }
+.library-search:focus-within { border-color: var(--ring); outline: 2px solid color-mix(in srgb, var(--ring) 20%, transparent); }
+.library-search > svg { width: 13px; height: 13px; flex-shrink: 0; }
+.command-center .library-search input { flex: 1; min-width: 0; width: 100%; height: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--foreground); font-size: 11px; outline: none; box-shadow: none; }
+.library-search input::-webkit-search-cancel-button { appearance: none; }
+.library-search > button { display: grid; place-items: center; flex-shrink: 0; width: 22px; height: 22px; padding: 3px; border: 0; border-radius: 4px; background: transparent; color: var(--muted-foreground); }
+.library-search > button:hover { background: var(--muted); color: var(--foreground); }
+.library-search > button svg { width: 13px; height: 13px; }
+
+/* Keep tabs independent of terminal controls, even with eight open sessions. */
+.command-center .live-terminal .terminal-header { display: flex; flex-direction: column; align-items: stretch; gap: 0; padding: 0; min-width: 0; }
+.terminal-tabbar { display: flex; align-items: center; min-width: 0; padding: 4px 6px 0; border-bottom: 1px solid var(--border); gap: 6px; }
+.command-center .terminal-tabbar .terminal-tabs { display: flex; flex: 1; min-width: 0; max-width: none; overflow-x: auto; scrollbar-width: none; gap: 3px; padding-bottom: 4px; }
+.terminal-tabbar .terminal-tabs::-webkit-scrollbar { display: none; }
+.command-center .terminal-tabbar .terminal-tab { flex: 0 0 auto; min-height: 28px; padding: 0 3px 0 0; border: 1px solid transparent; border-radius: 6px; }
+.command-center .terminal-tabbar .terminal-tab:has([aria-selected=true]) { border-color: color-mix(in srgb, var(--purple) 35%, transparent); background: var(--selection); box-shadow: none; }
+.command-center .terminal-tabbar .terminal-tab > button[role=tab] { height: 26px; padding: 5px 7px; font-size: 10px; gap: 5px; }
+.terminal-tab-navigation { display: flex; flex-shrink: 0; gap: 2px; padding-bottom: 4px; }
+.terminal-toolbar { display: flex; align-items: center; min-width: 0; min-height: 33px; gap: 5px; padding: 4px 8px; }
+.command-center .terminal-toolbar .terminal-cwd { display: block; flex: 1; min-width: 0; margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.command-center .terminal-toolbar > [data-slot=select-trigger] { width: 78px; height: 24px; flex-shrink: 0; }
+.terminal-toolbar > button { flex-shrink: 0; }
+.command-center .terminal-toolbar .terminal-heading { padding: 0; }
+
+.command-center .nav-item .nav-chevron { display: flex; margin-left: auto; flex-shrink: 0; }
+.command-center .nav-chevron svg { width: 12px; height: 12px; }
+.command-center.sidebar-collapsed .nav-chevron { display: none; }
+.dashboard-page { display: flex; flex-direction: column; gap: 15px; width: 100%; max-width: 1240px; margin: 0 auto; padding: 8px 2px 16px; }
+.dashboard-heading { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 0 1px 3px; }
+.dashboard-heading h1 { margin: 0 0 4px; }
+.dashboard-heading p { margin: 0; font-size: 11px; color: var(--muted-foreground); }
+.dashboard-top-grid, .dashboard-bottom-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 14px; }
+.dashboard-page .panel { min-width: 0; border-radius: 11px; overflow: hidden; }
+.dashboard-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 15px; border-bottom: 1px solid var(--border); }
+.dashboard-section-heading > span { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.dashboard-section-heading svg { width: 14px; height: 14px; color: var(--muted-foreground); }
+.dashboard-section-heading h2 { margin: 0; font-size: 12px; font-weight: 600; }
+.dashboard-section-heading small { padding: 1px 5px; border-radius: 4px; background: var(--muted); font-size: 10px; color: var(--muted-foreground); }
+.dashboard-section-heading > button, .dashboard-repo-footer button { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; font-size: 10px; color: var(--purple); white-space: nowrap; }
+.dashboard-section-heading > button svg, .dashboard-repo-footer button svg { width: 12px; height: 12px; color: inherit; }
+.dashboard-local { font-size: 9px; color: var(--muted-foreground); }
+.dashboard-local i { width: 5px; height: 5px; border-radius: 50%; background: var(--success); }
+.dashboard-repository { background: radial-gradient(ellipse at top left, color-mix(in srgb, var(--purple) 8%, transparent), transparent 70%), var(--card); }
+.dashboard-repo-name { display: flex; align-items: center; gap: 11px; min-width: 0; padding: 20px 16px 12px; }
+.dashboard-repo-icon { display: grid; place-items: center; flex-shrink: 0; width: 39px; height: 39px; background: var(--selection); color: var(--purple); border-radius: 10px; }
+.dashboard-repo-icon svg { width: 20px; height: 20px; }
+.dashboard-repo-name > div { min-width: 0; }
+.dashboard-repo-name h3 { margin: 0 0 5px; font-size: 16px; overflow-wrap: anywhere; }
+.dashboard-repo-name p { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); font-size: 10px; }
+.dashboard-repo-status { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px 15px; }
+.dashboard-repo-status > span { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--border); padding: 4px 7px; border-radius: 5px; font-size: 10px; color: var(--muted-foreground); }
+.dashboard-repo-status svg { width: 12px; height: 12px; }
+.dashboard-repo-status .is-clean { color: var(--success); }
+.dashboard-repo-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 16px 17px; }
+.dashboard-repo-footer { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-top: 1px solid var(--border); font-size: 10px; color: var(--muted-foreground); }
+.dashboard-shortcut, .dashboard-command, .dashboard-run { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; padding: 12px 15px; text-align: left; border: 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent); background: none; color: var(--foreground); }
+.dashboard-shortcut:last-child, .dashboard-command:last-child, .dashboard-run:last-child { border-bottom: 0; }
+.dashboard-shortcut:hover, .dashboard-command:hover, .dashboard-run:hover { background: var(--muted); }
+.dashboard-shortcut > span:nth-child(2), .dashboard-command > span, .dashboard-run > span:nth-child(2) { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 4px; }
+.dashboard-shortcut strong, .dashboard-command strong { font-size: 11px; font-weight: 600; }
+.dashboard-shortcut small, .dashboard-command small, .dashboard-run small { font-size: 10px; color: var(--muted-foreground); }
+.dashboard-shortcut-icon { display: grid; place-items: center; width: 31px; height: 31px; flex-shrink: 0; background: var(--muted); border-radius: 7px; }
+.dashboard-shortcut-icon svg { width: 15px; height: 15px; color: var(--purple); }
+.dashboard-shortcut > svg, .dashboard-command > svg { width: 13px; height: 13px; color: var(--muted-foreground); flex-shrink: 0; }
+.dashboard-command > svg:first-child { width: 17px; height: 17px; color: var(--purple); }
+.dashboard-run code { font-size: 10px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.dashboard-run .execution-status { font-size: 9px; flex-shrink: 0; }
+.dashboard-run-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted-foreground); flex-shrink: 0; }
+.dashboard-run-dot.status-succeeded { background: var(--success); }
+.dashboard-run-dot.status-failed, .dashboard-run-dot.status-timed-out { background: var(--destructive); }
+.dashboard-empty { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 26px 15px; text-align: center; color: var(--muted-foreground); font-size: 11px; }
+.dashboard-empty > svg { width: 20px; height: 20px; opacity: .6; margin-bottom: 4px; }
+.dashboard-empty p { margin: 0; font-size: 11px; color: var(--foreground); }
+.dashboard-empty small { font-size: 10px; line-height: 1.6; }
+.dashboard-start { padding: 19px 16px; }
+.dashboard-start > svg { width: 23px; height: 23px; color: var(--purple); margin-bottom: 10px; }
+.dashboard-start h3 { margin: 0 0 5px; font-size: 14px; }
+.dashboard-start p { font-size: 11px; color: var(--muted-foreground); margin: 0 0 14px; }
+@media (max-width: 1040px) { .dashboard-top-grid, .dashboard-bottom-grid { grid-template-columns: minmax(0, 1fr); }.dashboard-heading { flex-wrap: wrap; } }
+
+@media (max-width: 1180px) { .command-center .nav-item .nav-chevron { display: none; } }

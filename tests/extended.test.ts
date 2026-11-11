@@ -190,3 +190,53 @@ describe('extended command packs and confirmation expiry', () => {
     const b = confirmations.issue(request, 'state'); expect(() => confirmations.take(b.token, { action: 'two' })).toThrow('mismatched'); expect(() => confirmations.take(b.token, request)).toThrow()
   })
 })
+
+describe('SSH agent lifetime and removal controls', () => {
+  it.each(['600', '3600', '28800', '86400', 'unlimited'] as const)('loads only the confirmed lifetime %s', async (lifetimeSeconds) => {
+    const dir = directory(); writeFileSync(join(dir, 'id_lifetime'), 'PRIVATE FIXTURE', { mode: 0o600 }); writeFileSync(join(dir, 'id_lifetime.pub'), 'ssh-ed25519 AAAA fixture\n')
+    const service = new SshService(probe, dir), f = execution()
+    const action = { kind: 'agent.add' as const, publicKeyName: 'id_lifetime.pub', fingerprint: 'SHA256:FixtureFingerprint', lifetimeSeconds }
+    const preview = await service.preview(action)
+    await service.execute(action, preview.token, f.terminals, f.runner)
+    expect((f.startProgram.mock.calls[0] as unknown as [{ argv: string[] }])[0].argv).toEqual(lifetimeSeconds === 'unlimited' ? [join(dir, 'id_lifetime')] : ['-t', lifetimeSeconds, join(dir, 'id_lifetime')])
+  })
+  it('rejects an unconfirmed lifetime change and unsupported lifetimes', async () => {
+    const dir = directory(); writeFileSync(join(dir, 'id_lifetime'), 'PRIVATE FIXTURE', { mode: 0o600 }); writeFileSync(join(dir, 'id_lifetime.pub'), 'ssh-ed25519 AAAA fixture\n')
+    const service = new SshService(probe, dir), f = execution()
+    const action = { kind: 'agent.add' as const, publicKeyName: 'id_lifetime.pub', fingerprint: 'SHA256:FixtureFingerprint', lifetimeSeconds: '600' as const }
+    const preview = await service.preview(action)
+    await expect(service.execute({ ...action, lifetimeSeconds: '86400' }, preview.token, f.terminals, f.runner)).rejects.toThrow('mismatched')
+    expect(sshActionSchema.safeParse({ ...action, lifetimeSeconds: '0' }).success).toBe(false)
+    expect(sshActionSchema.safeParse({ ...action, lifetimeSeconds: '600;id' }).success).toBe(false)
+    expect(f.startProgram).not.toHaveBeenCalled()
+  })
+  it('removes an identity via its public file without requiring or deleting its private file', async () => {
+    const dir = directory(); writeFileSync(join(dir, 'id_remove.pub'), 'ssh-ed25519 AAAA fixture\n')
+    const agentProbe: ProbeRun = async (tool) => tool === 'ssh-keygen' ? probe(tool, []) : { code: 0, stdout: '256 SHA256:FixtureFingerprint fixture (ED25519)\n', stderr: '' }
+    const service = new SshService(agentProbe, dir), f = execution()
+    const action = { kind: 'agent.remove' as const, publicKeyName: 'id_remove.pub', fingerprint: 'SHA256:FixtureFingerprint' }
+    const preview = await service.preview(action)
+    await service.execute(action, preview.token, f.terminals, f.runner)
+    expect((f.startProgram.mock.calls[0] as unknown as [{ argv: string[] }])[0].argv).toEqual(['-d', join(dir, 'id_remove.pub')])
+    expect(readFileSync(join(dir, 'id_remove.pub'), 'utf8')).toBe('ssh-ed25519 AAAA fixture\n')
+    expect(existsSync(join(dir, 'id_remove'))).toBe(false)
+  })
+  it('refuses stale agent contents and binds removal to the current agent endpoint', async () => {
+    const dir = directory(), f = execution()
+    let identities = '256 SHA256:First first (ED25519)'
+    const agentProbe: ProbeRun = async () => ({ code: 0, stdout: identities, stderr: '' })
+    const service = new SshService(agentProbe, dir), action = { kind: 'agent.clear' as const }
+    const first = await service.preview(action)
+    identities = '256 SHA256:Second second (ED25519)'
+    await expect(service.execute(action, first.token, f.terminals, f.runner)).rejects.toThrow('changed')
+    const second = await service.preview(action)
+    vi.stubEnv('SSH_AUTH_SOCK', '/tmp/fixture-different-agent.sock')
+    await expect(service.execute(action, second.token, f.terminals, f.runner)).rejects.toThrow('changed')
+    expect(f.startProgram).not.toHaveBeenCalled()
+    const fresh = await service.preview(action)
+    expect(fresh.consequences.join(' ')).toContain('every repository')
+    await service.execute(action, fresh.token, f.terminals, f.runner)
+    expect((f.startProgram.mock.calls[0] as unknown as [{ argv: string[] }])[0].argv).toEqual(['-D'])
+    expect(readdirSync(dir)).toEqual([])
+  })
+})
