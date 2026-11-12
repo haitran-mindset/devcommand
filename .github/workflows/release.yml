@@ -43,8 +43,6 @@ jobs:
       ARCH: ${{ matrix.arch }}
       VERSION: ${{ needs.validate.outputs.version }}
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      ZDOTDIR: ${{ runner.temp }}/devcommand-zsh
-      SSH_AUTH_SOCK: ${{ runner.temp }}/devcommand-unused-agent.sock
     steps:
       - uses: actions/checkout@v7
         with:
@@ -53,7 +51,11 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-      - run: mkdir -p "$ZDOTDIR"
+      - name: Isolate shell and agent environment
+        run: |
+          mkdir -p "$RUNNER_TEMP/devcommand-zsh"
+          echo "ZDOTDIR=$RUNNER_TEMP/devcommand-zsh" >> "$GITHUB_ENV"
+          echo "SSH_AUTH_SOCK=$RUNNER_TEMP/devcommand-unused-agent.sock" >> "$GITHUB_ENV"
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
