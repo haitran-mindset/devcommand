@@ -73,6 +73,11 @@ export function TerminalDock({ height, visible, saveHeight, hide }: { height: nu
     } finally { if (mounted.current) setClosingAll(false) }
   }
 
+  useEffect(() => {
+    const active = sessions.find(session => session.id === activeId && session.status === 'running')
+    useSession.getState().setActiveTerminalId(active?.id ?? null)
+  }, [activeId, sessions])
+  useEffect(() => () => { useSession.getState().setActiveTerminalId(null) }, [])
   const active = sessions.find((session) => session.id === activeId)
   return <section className="panel terminal-dock live-terminal" style={{ height: value }} hidden={!visible} aria-label="Integrated terminal">
     <div className="resize-handle" role="separator" aria-label="Resize terminal dock" aria-orientation="horizontal" aria-valuenow={value} aria-valuemin={140} aria-valuemax={440} tabIndex={0} onKeyDown={(event) => {

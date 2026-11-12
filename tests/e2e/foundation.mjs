@@ -20,7 +20,7 @@ try {
   await page.getByRole('heading', { name: 'Change Git Remote URL', exact: true }).waitFor()
   assert.equal(await page.evaluate(() => typeof window.require), 'undefined')
   assert.equal(await page.evaluate(() => typeof window.process), 'undefined')
-  assert.deepEqual(await page.evaluate(() => Object.keys(window.devcommand).sort()), ['commands', 'docker', 'git', 'library', 'settings', 'ssh', 'terminal', 'window', 'workspace'])
+  assert.deepEqual(await page.evaluate(() => Object.keys(window.devcommand).sort()), ['clipboard', 'commands', 'docker', 'git', 'library', 'savedCommands', 'settings', 'ssh', 'terminal', 'window', 'workspace'])
   const preferences = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.getLastWebPreferences())
   assert.equal(preferences.sandbox, true)
   assert.equal(preferences.contextIsolation, true)

@@ -1,10 +1,13 @@
+import { savedCommandSaveSchema, savedCommandSchema, savedCommandReferenceSchema, savedCommandTagUpdateSchema, savedCommandMoveSchema, savedCommandsClearSchema, type SavedCommandsClear, type SavedCommandMove, type SavedCommand, type SaveSavedCommand, type SavedCommandTagUpdate } from '../../../shared/saved-commands'
+import { PublicError } from '../../security/errors'
+import { z } from 'zod'
 import Database from 'better-sqlite3'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import type { HistoryEntry, Workspace } from '../../../shared/commands'
 import { desc, eq } from 'drizzle-orm'
-import { appSettings, workspaces, commandFavorites, executionHistory } from './schema'
+import { appSettings, workspaces, commandFavorites, executionHistory, savedCommands } from './schema'
 import { defaultSettings, settingsPatchSchema, settingsSchema, type AppSettings, type AppSettingsPatch } from '../../../shared/contracts'
 
 export function openSettingsStore(path: string) {
@@ -13,7 +16,7 @@ export function openSettingsStore(path: string) {
     sqlite.pragma('journal_mode = WAL')
     sqlite.transaction(() => {
       const version = sqlite.pragma('user_version', { simple: true }) as number
-      if (version > 4) throw new Error('Database was created by a newer DevCommand version')
+      if (version > 5) throw new Error('Database was created by a newer DevCommand version')
       if (version < 1) {
         sqlite.exec('CREATE TABLE app_settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL)')
         sqlite.pragma('user_version = 1')
@@ -36,6 +39,10 @@ export function openSettingsStore(path: string) {
           }
         }
         sqlite.pragma('user_version = 4')
+      }
+      if (version < 5) {
+        sqlite.exec('CREATE TABLE IF NOT EXISTS saved_commands (id TEXT PRIMARY KEY, title TEXT NOT NULL, command TEXT NOT NULL, description TEXT NOT NULL, tags_json TEXT NOT NULL, revision TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)')
+        sqlite.pragma('user_version = 5')
       }
     })()
     const db = drizzle(sqlite)
@@ -91,9 +98,75 @@ export function openSettingsStore(path: string) {
       db.insert(executionHistory).values({ id: entry.execution.id, record, startedAt: entry.execution.startedAt }).onConflictDoUpdate({ target: executionHistory.id, set: { record } }).run()
       sqlite.exec('DELETE FROM executions WHERE id NOT IN (SELECT id FROM executions ORDER BY started_at DESC LIMIT 100)')
     })()
+    const decodeSavedCommand = (row: typeof savedCommands.$inferSelect): SavedCommand => savedCommandSchema.parse({ ...row, tags: JSON.parse(row.tags) })
+    const savedCommandOrder = (): string[] => {
+      const row = db.select().from(appSettings).where(eq(appSettings.key, 'saved-command-order')).get()
+      return row ? z.array(z.uuid()).max(1000).refine(ids => new Set(ids).size === ids.length).parse(JSON.parse(row.value)) : []
+    }
+    const setSavedCommandOrder = (ids: string[]) => {
+      const value = JSON.stringify(ids)
+      db.insert(appSettings).values({ key: 'saved-command-order', value }).onConflictDoUpdate({ target: appSettings.key, set: { value } }).run()
+    }
+    const listSavedCommands = (): SavedCommand[] => {
+      const order = new Map(savedCommandOrder().map((id, index) => [id, index]))
+      return db.select().from(savedCommands).orderBy(desc(savedCommands.createdAt), savedCommands.id).all().map(decodeSavedCommand)
+        .sort((a, b) => (order.get(a.id) ?? 1000) - (order.get(b.id) ?? 1000))
+    }
+    const moveSavedCommand = (input: SavedCommandMove) => sqlite.transaction(() => {
+      const { sourceId, targetId, placement } = savedCommandMoveSchema.parse(input)
+      const current = listSavedCommands().map(entry => entry.id)
+      if (!current.includes(sourceId) || !current.includes(targetId)) throw new PublicError('These saved commands changed. Refresh and try again.')
+      if (sourceId === targetId) return
+      const next = current.filter(id => id !== sourceId), target = next.indexOf(targetId)
+      next.splice(target + (placement === 'after' ? 1 : 0), 0, sourceId)
+      setSavedCommandOrder(next)
+    })()
+    const requireSavedCommand = (id: string, revision: string): SavedCommand => {
+      const row = db.select().from(savedCommands).where(eq(savedCommands.id, id)).get()
+      if (!row) throw new PublicError('This saved command was removed. Refresh the list.')
+      if (row.revision !== revision) throw new PublicError('This saved command changed. Refresh before editing or running it.')
+      return decodeSavedCommand(row)
+    }
+    const saveSavedCommand = (input: SaveSavedCommand): SavedCommand => sqlite.transaction(() => {
+      const { id, revision, ...fields } = savedCommandSaveSchema.parse(input)
+      const previous = id && revision ? requireSavedCommand(id, revision) : undefined
+      const currentOrder = listSavedCommands().map(entry => entry.id)
+      if (!previous && currentOrder.length >= 1000) throw new PublicError('Saved command limit reached (1000). Remove an entry first.')
+      const now = new Date().toISOString()
+      const record = { ...fields, id: previous?.id ?? randomUUID(), revision: randomUUID(), createdAt: previous?.createdAt ?? now, updatedAt: now }
+      const row = { ...record, tags: JSON.stringify(record.tags) }
+      db.insert(savedCommands).values(row).onConflictDoUpdate({ target: savedCommands.id, set: row }).run()
+      if (!previous) setSavedCommandOrder([record.id, ...currentOrder])
+      return record
+    })()
+    const removeSavedCommand = (input: Pick<SavedCommand, 'id' | 'revision'>) => sqlite.transaction(() => {
+      const ref = savedCommandReferenceSchema.parse(input)
+      requireSavedCommand(ref.id, ref.revision)
+      db.delete(savedCommands).where(eq(savedCommands.id, ref.id)).run()
+      setSavedCommandOrder(listSavedCommands().map(entry => entry.id))
+    })()
+    const clearSavedCommands = (input: SavedCommandsClear) => sqlite.transaction(() => {
+      const { entries } = savedCommandsClearSchema.parse(input)
+      const expected = new Map(entries.map(entry => [entry.id, entry.revision]))
+      const current = listSavedCommands()
+      if (current.length !== entries.length || current.some(entry => expected.get(entry.id) !== entry.revision)) throw new PublicError('Saved commands changed. Close this dialog and review deletion again.')
+      db.delete(savedCommands).run()
+      db.delete(appSettings).where(eq(appSettings.key, 'saved-command-order')).run()
+    })()
+    const tagSavedCommands = (input: SavedCommandTagUpdate) => sqlite.transaction(() => {
+      const { ids, tag, operation } = savedCommandTagUpdateSchema.parse(input)
+      for (const id of ids) {
+        const row = db.select().from(savedCommands).where(eq(savedCommands.id, id)).get()
+        if (!row) throw new PublicError('A selected command was removed. Refresh the list.')
+        const record = decodeSavedCommand(row)
+        const tags = operation === 'add' ? [...new Set([...record.tags, tag])] : record.tags.filter(value => value !== tag)
+        if (tags.length > 12) throw new PublicError('A command can have at most 12 tags. Remove a tag first.')
+        db.update(savedCommands).set({ tags: JSON.stringify(tags), revision: randomUUID(), updatedAt: new Date().toISOString() }).where(eq(savedCommands.id, id)).run()
+      }
+    })()
     // Recover interrupted runs after a crash without pretending they completed.
     for (const entry of history()) if (entry.execution.status === 'running') saveHistory({ ...entry, execution: { ...entry.execution, status: 'cancelled', finishedAt: new Date().toISOString(), error: 'Application closed before completion.' } })
-    return { get, update, listWorkspaces, selectedWorkspace, selectWorkspace, addWorkspace, removeWorkspace, favoriteWorkspace, favorites, favoriteOrder, setFavoriteOrder, favoriteCommand, history, clearHistory, saveHistory, close: () => sqlite.close() }
+    return { clearSavedCommands, moveSavedCommand, listSavedCommands, saveSavedCommand, removeSavedCommand, tagSavedCommands, requireSavedCommand, get, update, listWorkspaces, selectedWorkspace, selectWorkspace, addWorkspace, removeWorkspace, favoriteWorkspace, favorites, favoriteOrder, setFavoriteOrder, favoriteCommand, history, clearHistory, saveHistory, close: () => sqlite.close() }
   } catch (error) {
     sqlite.close()
     throw error

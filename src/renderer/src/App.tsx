@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { version as appVersion } from '../../../package.json'
 import { Link as RouterLink, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Check, CheckCircle2, ChevronDown, ChevronRight, CircleHelp, Database, Folder, FolderOpen, GitBranch, GitCommitHorizontal, House, Info, KeyRound, LayoutGrid, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radio, RefreshCw, Search, Settings, SquareTerminal, Sun, Terminal, X, Clock, Archive, type LucideIcon } from 'lucide-react'
+import { Check, CheckCircle2, ChevronDown, ChevronRight, CircleHelp, Database, Folder, FolderOpen, GitBranch, GitCommitHorizontal, House, Info, KeyRound, LayoutGrid, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radio, RefreshCw, Search, Settings, SquareTerminal, Sun, Terminal, X, Clock, Archive, Bookmark, type LucideIcon } from 'lucide-react'
 import { KeyboardShortcuts } from './components/KeyboardShortcuts'
 import { Button } from './components/ui/button'
 import { cn } from './lib/utils'
@@ -17,6 +17,7 @@ import { GitManager } from './features/git/GitManager'
 import { RunningTasks } from './features/execution/RunningTasks'
 import { HistoryPage } from './features/history/HistoryPage'
 import { SshManager } from './features/ssh/SshManager'
+import { SavedCommandsPage } from './features/saved-commands/SavedCommandsPage'
 import { Dashboard } from './features/dashboard/Dashboard'
 import { DockerManager } from './features/docker/DockerManager'
 import { useWorkspaces, useRepository, useExecutionRefresh } from './lib/workspace'
@@ -31,6 +32,7 @@ const nav: { route: AppRoute; label: string; icon: LucideIcon }[] = [
   { route: 'git', label: 'Git Manager', icon: GitBranch },
   { route: 'ssh', label: 'SSH Manager', icon: KeyRound },
   { route: 'shell', label: 'Shell Tools', icon: SquareTerminal },
+  { route: 'saved-commands', label: 'Saved Commands', icon: Bookmark },
   { route: 'history', label: 'History', icon: Clock },
 ]
 const gitNavigation = [
@@ -158,7 +160,7 @@ export function App() {
     <main className="workspace">
       <section className="workspace-context" aria-label="Repository context"><RepositoryPicker notify={setNotice} /><span className="branch-pill"><GitBranch />{repository.data ? `${repository.data.branch}${repository.data.unborn ? ' (unborn)' : ''}${repository.data.bare ? ' (bare)' : ''}` : 'No branch'}{repository.data && <i />}</span><span className={cn('repo-state', repository.data?.clean && 'is-clean', repository.isError && 'has-error')}><CheckCircle2 />{repository.isFetching ? 'Refreshing…' : repository.isError ? 'Repository unavailable' : repository.data ? repository.data.conflicts ? 'Merge conflicts' : repository.data.clean ? 'Clean working tree' : 'Uncommitted changes' : 'No repository connected'}</span><div className="context-actions">{selectedWorkspace && <Button variant="outline" size="sm" disabled={openingRepository} title="Open repository folder" onClick={() => void openRepository()}><FolderOpen />{openingRepository ? 'Opening…' : 'Open repository'}</Button>}<IconButton label="Refresh repository" disabled={!selectedWorkspace || refreshingRepository || repository.isFetching} onClick={() => void refreshRepository()}><RefreshCw /></IconButton></div></section>
       <div className={cn('page-content', route === 'settings' && 'settings-content')}>
-        {(route === 'commands' || route === 'my-commands') ? <CommandExplorer key={location.key} notify={setNotice} favoritesOnly={route === 'my-commands'} /> : route === 'workspaces' ? <WorkspacesPage /> : route === 'history' ? <HistoryPage /> : ['git', 'git-config', 'git-remote'].includes(route) ? <GitManager route={route} /> : route === 'ssh' ? <SshManager notify={setNotice} /> : route === 'docker' ? <DockerManager /> : route === 'shell' ? <ManagedPanel /> : route === 'settings' ? <SettingsPage settings={settings} save={(patch) => update.mutate(patch)} pending={update.isPending} /> : route === 'dashboard' ? <Dashboard /> : <ModulePage route={route} navigate={navigate} />}
+        {(route === 'commands' || route === 'my-commands') ? <CommandExplorer key={location.key} notify={setNotice} favoritesOnly={route === 'my-commands'} /> : route === 'saved-commands' ? <SavedCommandsPage notify={setNotice} /> : route === 'workspaces' ? <WorkspacesPage /> : route === 'history' ? <HistoryPage /> : ['git', 'git-config', 'git-remote'].includes(route) ? <GitManager route={route} /> : route === 'ssh' ? <SshManager notify={setNotice} /> : route === 'docker' ? <DockerManager /> : route === 'shell' ? <ManagedPanel /> : route === 'settings' ? <SettingsPage settings={settings} save={(patch) => update.mutate(patch)} pending={update.isPending} /> : route === 'dashboard' ? <Dashboard /> : <ModulePage route={route} navigate={navigate} />}
       </div>
       <div className={cn('bottom-workspace', exploring && 'with-tasks')} hidden={!settings.terminalVisible}>
         <TerminalDock visible={settings.terminalVisible} height={settings.terminalHeight} saveHeight={(height) => update.mutate({ terminalHeight: height })} hide={() => update.mutate({ terminalVisible: false })} />

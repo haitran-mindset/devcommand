@@ -1,3 +1,4 @@
+import { useCallback, useState } from 'react'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from './select'
 
 type Option = string | { value: string; label: string; disabled?: boolean }
@@ -15,6 +16,9 @@ interface SelectFieldProps {
 
 /** Share the shadcn composition and preserve domain values, including the empty SSH identity. */
 export function SelectField({ label, value, options, onValueChange, id, disabled, required, size = 'sm', className }: SelectFieldProps) {
+  // Native modal dialogs live above body portals. Keep their options in the same top layer.
+  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null)
+  const triggerRef = useCallback((node: HTMLButtonElement | null) => { setPortalContainer(node?.closest('dialog') ?? null) }, [])
   const items = options.map((option) => typeof option === 'string' ? { value: option, label: option } : option)
   const selected = items.find((item) => item.value === value)
   // Radix reserves empty item values. Encode every option to avoid sentinel collisions with real values.
@@ -22,7 +26,7 @@ export function SelectField({ label, value, options, onValueChange, id, disabled
     const item = items.find((item) => encoded === `value:${item.value}`)
     if (item) onValueChange(item.value)
   }} disabled={disabled} required={required}>
-    <SelectTrigger id={id} aria-label={label} aria-required={required} size={size} className={className}><SelectValue placeholder="Select an option" /></SelectTrigger>
-    <SelectContent position="popper"><SelectGroup>{items.map((item) => <SelectItem key={item.value} value={`value:${item.value}`} disabled={item.disabled}>{item.label}</SelectItem>)}</SelectGroup></SelectContent>
+    <SelectTrigger ref={triggerRef} id={id} aria-label={label} aria-required={required} size={size} className={className}><SelectValue placeholder="Select an option" /></SelectTrigger>
+    <SelectContent position="popper" portalContainer={portalContainer}><SelectGroup>{items.map((item) => <SelectItem key={item.value} value={`value:${item.value}`} disabled={item.disabled}>{item.label}</SelectItem>)}</SelectGroup></SelectContent>
   </Select>
 }

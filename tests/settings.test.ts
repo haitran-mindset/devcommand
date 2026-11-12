@@ -52,7 +52,7 @@ describe('SQLite settings', () => {
       const verify = new Database(path)
       try {
         expect(verify.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('workflows','workflow_runs')").all()).toEqual([])
-        expect(verify.pragma('user_version', { simple: true })).toBe(4)
+        expect(verify.pragma('user_version', { simple: true })).toBe(5)
       } finally { verify.close() }
     } finally { rmSync(directory, { recursive: true, force: true }) }
   })

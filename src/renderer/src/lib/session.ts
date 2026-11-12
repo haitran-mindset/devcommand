@@ -8,10 +8,13 @@ interface SessionState {
   select: (id: string) => void
   draft: CommandRequest | null
   setDraft: (request: CommandRequest | null) => void
+  activeTerminalId: string | null
+  setActiveTerminalId: (id: string | null) => void
   inserted: TerminalSession | null
   setInserted: (session: TerminalSession | null) => void
 }
 export const useSession = create<SessionState>((set) => ({
+  activeTerminalId: null, setActiveTerminalId: (activeTerminalId) => set({ activeTerminalId }),
   query: '', setQuery: (query) => set({ query }),
   draft: null, setDraft: (draft) => set({ draft }),
   inserted: null, setInserted: (inserted) => set({ inserted }),

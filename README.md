@@ -234,6 +234,23 @@ Managed execution retains internal safety arguments, including disabling hooks/f
 
 Sensitive parameters are masked in previews and cannot be copied or inserted. **Insert** currently requires zsh/bash with bracketed paste; review the draft before pressing Enter yourself. Commands entered directly in a shell are outside managed-execution policy.
 
+### Saved Commands
+
+Open **Saved Commands** in the sidebar to maintain your personal shell-command library, separate from built-in commands and Favorites.
+
+- Create, edit, and delete commands with an optional title, optional description, and comma-separated tags. Blank titles display the first nonempty command line; saved command text is preserved.
+- **Delete all** removes every saved command across all tags and filters after confirmation. It preserves repositories, Favorites, settings, and running terminal sessions; if the list changes during confirmation, review deletion again.
+- Save multiline commands exactly as entered; copy the full text with the Copy icon.
+- Drag a command by its grip to reorder it, or focus the grip and use **Alt+↑/↓**. Order persists across restarts, works while filtering, and stays unchanged when editing or tagging. New commands appear at the top.
+- Assign multiple tags to a command. Select several commands, enter a tag, and choose **Add tag** or **Remove tag** to organize them together.
+- Search titles, command text, descriptions, and tags, or filter by a tag or **Untagged**.
+- Choose **Run**, review the complete command and target directory, then **Confirm & Run**. The default target is the live working directory of your active terminal, including changes made with `cd`. Without a running active terminal, it defaults to Home; you can also select an existing repository. The app rechecks the directory at confirmation and opens a new tab there.
+- Commands run in a new terminal tab using an installed POSIX shell on macOS/Linux. The shell remains open afterward; execution output is not added to managed Execution History.
+
+Commands and tags persist in local SQLite. The library supports up to 1,000 commands, 12 tags per command, and 8,192 characters of shell code per command. Saved text is stored as entered rather than automatically redacted: keep passwords, tokens, and private keys out of it. Saving or copying never executes a command.
+
+Saved commands are your own shell code, running with your OS user permissions. They do not receive the built-in managed Git restrictions. Confirmations expire after 60 seconds, cannot be reused, and are invalidated when the saved command or resolved target changes.
+
 ### Favorites and drag ordering
 
 Favorites is a tab in Command Explorer, not a separate sidebar menu.
@@ -522,11 +539,12 @@ Stored locally:
 - Theme, last page, sidebar state, and dock preferences.
 - Repository entries and the selected repository.
 - Command Favorites and group order.
+- Personal saved commands, descriptions, and tags (plain local text).
 - Bounded/redacted managed-execution history.
 
-Private-key content, passphrases, terminal keystrokes, and full terminal output are not stored. The app has no separate account or telemetry; CLIs you run may still access the network and follow their own data policies.
+SSH features do not store private-key content or passphrases. Terminal keystrokes and full terminal output are not persisted. The app has no separate account or telemetry; CLIs you run may still access the network and follow their own data policies.
 
-The database uses migrations and is not silently reset when corrupted. Migration v4 removes data from a retired experimental module and redirects its old page to Command Explorer while preserving other data. Quit the app before manually backing up or modifying the database; there is no database backup/export UI yet.
+The database uses migrations and is not silently reset when corrupted. Migration v4 removes data from a retired experimental module and redirects its old page to Command Explorer while preserving other data. Migration v5 adds the personal saved-command library; older app versions cannot open a v5 database. Quit the app before manually backing up or modifying the database; there is no database backup/export UI yet.
 
 ### Execution and confirmation
 
@@ -625,10 +643,12 @@ npm run test:e2e:zsh
 npm run test:e2e:zsh-source
 npm run test:e2e:favorites
 npm run test:e2e:ui
+npm run test:e2e:saved-commands
 ```
 
 | Suite | Coverage |
 | --- | --- |
+| `test:e2e:saved-commands` | Personal CRUD, bulk tags, search/copy, confirmed multiline execution in a temporary repository, persistence and responsive layout |
 | `test:e2e` | Isolation, IPC, navigation, themes, and settings persistence |
 | `test:e2e:shortcuts` | Platform keycaps, shortcut dialog dismissal/focus, modal command isolation, themes and minimum window sizing |
 | `test:e2e:palette` | Palette keyboard/pointer selection, focus restoration, empty/error recovery, themes and compact window sizing |
@@ -652,6 +672,7 @@ Run the same suites against a packaged application:
 
 ```sh
 DEVCOMMAND_EXECUTABLE="$PWD/release/mac-arm64/DevCommand.app/Contents/MacOS/DevCommand" npm run test:e2e:ui
+npm run test:e2e:saved-commands
 DEVCOMMAND_EXECUTABLE="$PWD/release/mac-arm64/DevCommand.app/Contents/MacOS/DevCommand" npm run test:e2e:favorites
 ```
 

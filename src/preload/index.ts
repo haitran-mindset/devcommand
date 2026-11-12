@@ -7,6 +7,16 @@ function subscribe<T>(channel: string, handler: (event: T) => void): () => void 
   return () => ipcRenderer.removeListener(channel, listener)
 }
 const api: DevCommandAPI = {
+  savedCommands: {
+    list: () => ipcRenderer.invoke('saved-commands:list'),
+    save: (input) => ipcRenderer.invoke('saved-commands:save', input),
+    remove: (input) => ipcRenderer.invoke('saved-commands:remove', input),
+    clear: (input) => ipcRenderer.invoke('saved-commands:clear', input),
+    tag: (input) => ipcRenderer.invoke('saved-commands:tag', input),
+    move: (input) => ipcRenderer.invoke('saved-commands:move', input),
+    preview: (input) => ipcRenderer.invoke('saved-commands:preview', input),
+    run: (input) => ipcRenderer.invoke('saved-commands:run', input)
+  },
   clipboard: { writeText: (text) => ipcRenderer.invoke('clipboard:write-text', text) },
   ssh: {
     snapshot: () => ipcRenderer.invoke('ssh:snapshot'),

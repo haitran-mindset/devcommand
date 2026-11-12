@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto'
+import { realpathSync } from 'node:fs'
+import { readProcessDirectory } from '../src/main/services/terminal/directory'
 import { describe, expect, it, vi } from 'vitest'
 import { TerminalManager } from '../src/main/services/terminal/manager'
 import { getShellEnvironment } from '../src/main/services/terminal/environment'
@@ -18,6 +21,29 @@ describe('terminal lifecycle', () => {
     onData('\x1b[?2004h')
     expect(write).toHaveBeenCalledOnce()
     expect(() => manager.startProgram({ executable: '/bin/zsh', argv: ['-i'], cwd: '/tmp', label: 'fixture', initialCommand: 'source bad\ncommand' })).toThrow('Unsafe initial')
+  })
+  it('reads current cwd only for owned live sessions and rejects a session closed during lookup', async () => {
+    const fake = { pid: 777701, pause: vi.fn(), kill: vi.fn(), onData: () => ({ dispose() {} }), onExit: () => ({ dispose() {} }) } as unknown as IPty
+    const terminate = vi.fn(async () => {})
+    let path = '/fixture/Downloads with spaces'
+    const readDirectory = vi.fn(async () => path)
+    const manager = new TerminalManager(() => {}, () => {}, getShellEnvironment(), () => fake, terminate, readDirectory)
+    const session = manager.create({ shellId: manager.getEnvironment().defaultShellId, cols: 80, rows: 24 })
+    expect(await manager.currentDirectory(session.id)).toBe(path)
+    expect(readDirectory).toHaveBeenCalledWith(fake.pid)
+    path = '/fixture/another directory'
+    expect(await manager.currentDirectory(session.id)).toBe(path)
+    await expect(manager.currentDirectory(randomUUID())).rejects.toThrow()
+    expect(readDirectory).toHaveBeenCalledTimes(2)
+    let release!: (value: string) => void
+    readDirectory.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+    const pending = manager.currentDirectory(session.id)
+    await manager.close(session.id); release(path)
+    await expect(pending).rejects.toThrow('closed')
+  })
+  it('reads this test process cwd through the OS without running shell commands', async () => {
+    if (process.platform === 'win32') return
+    expect(await readProcessDirectory(process.pid)).toBe(realpathSync(process.cwd()))
   })
   it('validates shell IDs, bounds sessions, applies acknowledgement backpressure and disposes listeners', async () => {
     let onData!: (data: string) => void

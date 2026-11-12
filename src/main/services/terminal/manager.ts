@@ -1,3 +1,5 @@
+import { readProcessDirectory } from './directory'
+import { PublicError } from '../../security/errors'
 import { textChunks, hasControlCharacters } from '../../../shared/text'
 import { randomUUID } from 'node:crypto'
 import * as nodePty from 'node-pty'
@@ -20,8 +22,16 @@ export class TerminalManager {
     private readonly emitExit: (event: TerminalExitEvent) => void,
     private readonly environment: ShellEnvironment = getShellEnvironment(),
     private readonly spawnPty = nodePty.spawn,
-    private readonly terminate = terminateTree
+    private readonly terminate = terminateTree,
+    private readonly readDirectory = readProcessDirectory
   ) {}
+  async currentDirectory(sessionId: string): Promise<string> {
+    idSchema.parse(sessionId)
+    const entry = this.get(sessionId)
+    const cwd = await this.readDirectory(entry.pty.pid)
+    if (this.sessions.get(sessionId) !== entry || entry.closing) throw new PublicError('This terminal closed while its directory was being checked.')
+    return cwd
+  }
   getEnvironment() {
     const { cwd, shells, defaultShellId } = this.environment
     return { cwd, shells, defaultShellId }
