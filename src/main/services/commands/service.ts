@@ -1,7 +1,7 @@
 import { commandFamily } from '../../../shared/command-groups'
 import { createHash, randomUUID } from 'node:crypto'
 import { lstatSync, realpathSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 import { GitService, validateGitPath } from '../git/service'
 import { homedir } from 'node:os'
 import type { CommandPreview, CommandRequest, CommandSummary, HistoryEntry, SearchRequest } from '../../../shared/commands'
@@ -15,11 +15,12 @@ import { redact } from '../execution/redact'
 import type { SshAction, SshAgentLifetime } from '../../../shared/extended'
 import type { SshService } from '../ssh/service'
 import type { TerminalManager } from '../terminal/manager'
+import { fileOperation } from './files'
 import { permissionArguments, permissionTarget } from './permissions'
 import { inspectPortTarget } from './ports'
 import { findExecutable, type ProbeRun } from '../cli/probe'
 
-interface Prepared { definition: Definition; request: CommandRequest; process: ProcessDefinition; preview: CommandPreview; binding: string; ssh?: { action: SshAction; token: string; expiresAt: string } }
+interface Prepared { definition: Definition; request: CommandRequest; process: ProcessDefinition; preview: CommandPreview; binding: string; initialCommand?: string; ssh?: { action: SshAction; token: string; expiresAt: string } }
 interface Confirmation { binding: string; state: string; expires: number }
 const digest = (value: string) => createHash('sha256').update(value).digest('hex')
 export class CommandService {
@@ -63,6 +64,20 @@ export class CommandService {
     if (definition.requiresRepository && !request.workspaceId) throw new PublicError('Choose a Git workspace before previewing this command.')
     const repository = request.workspaceId && definition.category !== 'SSH' ? await this.workspace.status(request.workspaceId) : undefined
     const cwd = repository?.rootPath ?? homedir()
+    if (definition.id.startsWith('compare.')) {
+      for (const key of ['leftFile', 'rightFile']) {
+        try {
+          params[key] = realpathSync(resolve(cwd, params[key]))
+          if (!lstatSync(params[key]).isFile()) throw new Error()
+        } catch { throw new PublicError('Choose two existing regular files. Relative paths start at the selected workspace or home directory.') }
+      }
+    }
+    if (definition.id.startsWith('find.')) {
+      try {
+        params.searchRoot = realpathSync(resolve(cwd, params.searchRoot))
+        if (!lstatSync(params.searchRoot).isDirectory()) throw new Error()
+      } catch { throw new PublicError('Choose an existing readable search directory. Relative paths start at the workspace or home directory.') }
+    }
     if (definition.category === 'Permissions' && repository?.bare) throw new PublicError('Choose a working-tree repository for permissions commands.')
     const executable = findExecutable(definition.executable)
     if (!executable) throw new PublicError(`${definition.executable} is not installed or absent from the application PATH.`)
@@ -72,6 +87,21 @@ export class CommandService {
       const path = params.keyName ? join(this.ssh!.directory, params.keyName) : this.ssh!.directory
       const argv = action.kind === 'key.generate' ? ['-t', 'ed25519', '-a', '64', '-C', action.comment, '-f', path] : action.kind === 'agent.add' ? (action.lifetimeSeconds === 'unlimited' ? [path] : ['-t', action.lifetimeSeconds ?? '3600', path]) : action.kind === 'agent.remove' ? ['-d', join(this.ssh!.directory, action.publicKeyName)] : ['-D']
       return { definition, request, process: { commandId: definition.id, executable, argv, cwd: action.kind === 'agent.clear' ? homedir() : this.ssh!.directory, preview: preview.display }, preview: { display: preview.display, cwd: action.kind === 'agent.clear' ? homedir() : this.ssh!.directory, risk: definition.risk, consequences: preview.consequences }, binding: '', ssh: { action, token: preview.token, expiresAt: preview.expiresAt } }
+    }
+    let initialCommand: string | undefined
+    let sourceState: string | undefined
+    let zshSyntaxArgs: string[] | undefined
+    if (definition.id === 'zsh.syntax' || definition.id === 'zsh.source') {
+      const root = process.env.ZDOTDIR || homedir()
+      if (!isAbsolute(root)) throw new PublicError('ZDOTDIR must be an absolute directory. Check your shell environment.')
+      const path = join(root, definition.id === 'zsh.source' ? '.zshrc' : params.configFile)
+      try { const file = lstatSync(path); if (!file.isFile() || file.isSymbolicLink() || file.size > 256 * 1024) throw new Error() }
+      catch { throw new PublicError('Choose an existing regular Zsh startup file smaller than 256 KiB. Symlinks are not accepted.') }
+      if (definition.id === 'zsh.source') {
+        initialCommand = displayCommand('source', [path])
+        const file = lstatSync(path, { bigint: true })
+        sourceState = [path, file.dev, file.ino, file.size, file.mtimeNs, file.ctimeNs].map(String).join(':')
+      } else zshSyntaxArgs = ['-f', '-n', '--', path]
     }
     let sshFingerprintArgs: string[] | undefined
     if (definition.id === 'ssh.key.fingerprint') {
@@ -128,20 +158,34 @@ export class CommandService {
       if (!oid) throw new PublicError('That stash does not exist.')
       if (params.expectedOid && params.expectedOid !== oid) throw new PublicError('The selected stash changed since it was displayed. Refresh the stash list and review the intended entry.')
     }
+    const files = definition.id.startsWith('files.') ? fileOperation(cwd, definition.id, params) : undefined
+    if (files && repository?.bare) throw new PublicError('Choose a working-tree repository for file operations.')
     const permission = definition.category === 'Permissions' ? permissionTarget(cwd, params.target, definition.mutation) : undefined
     const portTarget = definition.id === 'system.port.stop' ? await inspectPortTarget(this.portProbe, params.port, params.pid) : undefined
-    const argv = sshFingerprintArgs ?? (permission ? permissionArguments(definition, params, permission.target) : portTarget ? ['-TERM', portTarget.pid] : definition.id === 'git.unstage' && repository?.unborn ? ['rm', '--cached', '--force', '--', params.path] : definition.id === 'git.unstage' && originalPath ? ['restore', '--staged', '--', params.path, originalPath] : expand(definition, params))
+    const findArgs = definition.id.startsWith('find.') ? expand(definition, params) : undefined
+    if (findArgs && params.maxDepth !== 'all') findArgs.splice(2, 0, '-maxdepth', params.maxDepth)
+    const argv = findArgs ?? files?.argv ?? zshSyntaxArgs ?? sshFingerprintArgs ?? (permission ? permissionArguments(definition, params, permission.target) : portTarget ? ['-TERM', portTarget.pid] : definition.id === 'git.unstage' && repository?.unborn ? ['rm', '--cached', '--force', '--', params.path] : definition.id === 'git.unstage' && originalPath ? ['restore', '--staged', '--', params.path, originalPath] : expand(definition, params))
     const executionArgs = definition.executable === 'git' && definition.requiresRepository ? [...gitSafetyArgs, ...argv] : argv
     const safeParams = { ...params }
     for (const parameter of definition.parameters) if (parameter.sensitive) safeParams[parameter.key] = '[REDACTED]'
-    const safeArgs = sshFingerprintArgs || permission || portTarget ? argv : definition.executable === 'git' && definition.requiresRepository ? [...gitSafetyArgs, ...(definition.id === 'git.unstage' && (repository?.unborn || originalPath) ? argv : expand(definition, safeParams))] : expand(definition, safeParams)
-    const display = redact(displayCommand(definition.executable, safeArgs))
+    const safeArgs = findArgs || files || zshSyntaxArgs || sshFingerprintArgs || permission || portTarget ? argv : definition.executable === 'git' && definition.requiresRepository ? [...gitSafetyArgs, ...(definition.id === 'git.unstage' && (repository?.unborn || originalPath) ? argv : expand(definition, safeParams))] : expand(definition, safeParams)
+    const display = initialCommand ?? redact(displayCommand(definition.executable, safeArgs))
     const consequences: string[] = []
+    if (definition.id.startsWith('compare.')) consequences.push('Read-only comparison. Relative file paths start at the selected workspace or home directory; absolute paths are also supported. Symbolic links resolve to their regular-file targets.', 'Exit 0 means equal under the selected comparison rules; exit 1 means different. Both are successful comparisons. Higher exit codes indicate an error. An equal result usually has no output.', 'Diff output may contain file contents and is saved in Execution History. Large comparisons are subject to the managed execution timeout and output limits.')
+    if (files) consequences.push(...files.consequences, 'Paths are checked inside the selected repository at preview and run. Symbolic links and .git metadata are refused. No sudo or recursive operations are used.', 'Do not change the same paths in another tool while this operation runs. CLI filesystem operations are not atomically isolated from concurrent filesystem changes.')
+    if (definition.id.startsWith('find.')) consequences.push('Reads names and metadata only; symbolic links inside the search directory are not followed. Results include hidden directories, limited by maximum depth when selected. The default / searches from the filesystem root without a depth limit; access follows your existing OS permissions.', 'An empty result is successful. Permission errors can produce partial results and a failed exit status. Large searches may hit the managed execution timeout; narrow the directory or depth.')
     if (permission) consequences.push(`Target: ${permission.target}. Current mode: ${permission.mode}; owner UID:GID: ${permission.owner}.`, definition.mutation ? 'Changes this path only, without recursion or automatic sudo. Access changes may affect your tools and collaborators.' : 'Reads permissions without changing this path.')
     else if (definition.category === 'SSH') {
       if (definition.id === 'ssh.connect') consequences.push('Opens an interactive SSH connection using your OpenSSH configuration and OS agent. Enter any password or passphrase in the terminal.', 'Session input/output is not saved in Execution History. No remote command is submitted by DevCommand.')
       else if (definition.id === 'ssh.test') consequences.push('Tests a direct hostname/IP, bypassing SSH config aliases, proxy and local commands. Unknown/changed host keys are refused; prompts are disabled.', 'Git providers may return a nonzero exit code after successful authentication. Read the diagnostic output instead of relying only on the exit code.')
       else if (definition.id.startsWith('ssh.agent.')) consequences.push('Reads the OS agent without loading, removing or changing identities. No identities (exit 1) is an empty result; an unreachable agent remains an error.')
+    }
+    else if (definition.id.startsWith('zsh.')) {
+      if (definition.id === 'zsh.source') consequences.push('Opens a new interactive Zsh tab with -f, then sources the displayed .zshrc once in that shell. Aliases, functions and environment changes stay available in the new tab; existing tabs are unchanged.', 'Sourcing executes the commands in this file with your normal OS permissions. DevCommand does not edit it. Terminal input/output is not saved in Execution History.')
+      else if (definition.id === 'zsh.start') consequences.push('Starts an interactive Zsh with your existing startup files. Those files may run commands using your normal OS permissions.', 'Ctrl+C interrupts the foreground job and keeps this shell tab open. No command is submitted automatically.')
+      else if (definition.id === 'zsh.clean') consequences.push('Starts interactive Zsh with -f, skipping user startup files. The system /etc/zshenv can still be read.', 'Uses the inherited environment; it is not an OS sandbox or a reset of your environment variables.')
+      else consequences.push('Uses a fresh Zsh with -f rather than the state of an existing terminal tab. User startup files are skipped; the system /etc/zshenv may still run.')
+      if (definition.id === 'zsh.syntax') consequences.push('Parses only the selected startup file with -n; it does not execute commands from that file or modify it. Syntax-check output is omitted from persistent history.')
     }
     else if (definition.id.startsWith('ngrok.')) {
       if (definition.interactive) consequences.push('Publishes the selected service or configured endpoints through your ngrok account. Access follows your existing ngrok endpoint policy.', 'Uses your existing ngrok credentials and configuration. Some endpoint types or custom domains require account entitlements.', 'Ctrl+C stops the agent and returns to the shell in this tab. Session output is not saved in Execution History.')
@@ -173,12 +217,16 @@ export class CommandService {
     if (definition.network && definition.category === 'Git') consequences.push('Connects to the configured remote using your local Git/SSH authentication. Network commands may take up to 60 seconds.')
     if (repository && !repository.clean && definition.mutation && !portTarget && !permission && !definition.interactive) consequences.push('This working tree contains local changes. Review and back up your work before continuing.')
     if (definition.executable === 'git' && definition.requiresRepository) consequences.push('Managed Git disables hooks, fsmonitor, external/file transports and interactive paging.')
-    return { definition, request, process: { commandId: definition.id, executable, argv: executionArgs, cwd, preview: display, timeoutMs: definition.network ? 60000 : 10000, successExitCodes: definition.successExitCodes, secrets: definition.parameters.filter((parameter) => parameter.sensitive).map((parameter) => params[parameter.key]) }, preview: { display, cwd, risk: definition.risk, consequences, repository }, binding: digest(JSON.stringify([definition.id, params, request.workspaceId ?? null, executable, portTarget, permission?.state])) }
+    return { definition, request, initialCommand, process: { commandId: definition.id, executable, argv: executionArgs, cwd, preview: display, timeoutMs: definition.network || definition.id.startsWith('find.') ? 60000 : 10000, successExitCodes: definition.successExitCodes, secrets: definition.parameters.filter((parameter) => parameter.sensitive).map((parameter) => params[parameter.key]) }, preview: { display, cwd, risk: definition.risk, consequences, repository }, binding: digest(JSON.stringify([definition.id, params, request.workspaceId ?? null, executable, portTarget, permission?.state, sourceState, files?.state])) }
   }
   private async state(request: CommandRequest): Promise<string> {
     const definition = getDefinition(request.commandId)
     const params = validateParams(definition, request.params)
     if (definition.category === 'SSH') return digest(JSON.stringify(params))
+    if (definition.id.startsWith('files.')) {
+      if (!request.workspaceId) throw new PublicError('Choose a repository for file operations.')
+      return digest(fileOperation((await this.workspace.resolve(request.workspaceId)).rootPath, definition.id, params).state)
+    }
     if (definition.category === 'Permissions') {
       if (!request.workspaceId) throw new PublicError('Choose a repository before inspecting permissions.')
       const root = (await this.workspace.resolve(request.workspaceId)).rootPath
@@ -273,7 +321,7 @@ export class CommandService {
     if (!prepared.definition.interactive) throw new PublicError('This command is not an interactive CLI session.')
     if (!confirmation || confirmation.expires <= this.now() || confirmation.binding !== prepared.binding) throw new PublicError('Confirmation is missing, expired or does not match this session. Preview again.')
     if (confirmation.state !== await this.state(prepared.request)) throw new PublicError('The project changed after preview. Review the session again.')
-    return terminals.startProgram({ executable: prepared.process.executable, argv: prepared.process.argv, cwd: prepared.process.cwd, label: prepared.definition.title, keepShell: true })
+    return terminals.startProgram({ executable: prepared.process.executable, argv: prepared.process.argv, cwd: prepared.process.cwd, label: prepared.definition.title, ...(prepared.initialCommand ? { initialCommand: prepared.initialCommand } : {}), keepShell: !prepared.definition.id.startsWith('zsh.') })
   }
   private readonly clearedHistory = new Set<string>()
   clearHistory() {
@@ -284,7 +332,7 @@ export class CommandService {
     try { this.store.saveHistory(entry) } catch { this.persistenceFailure() }
   }
   private persistedSnapshot(snapshot: ExecutionSnapshot): ExecutionSnapshot {
-    const omit = snapshot.commandId.startsWith('git.config.')
+    const omit = snapshot.commandId.startsWith('git.config.') || snapshot.commandId === 'zsh.syntax'
     return { ...snapshot, preview: redact(snapshot.preview), output: omit ? [] : snapshot.output.map((chunk) => ({ ...chunk, data: redact(chunk.data) })), error: snapshot.error ? redact(snapshot.error) : undefined }
   }
   completed(id: string) {
@@ -296,7 +344,12 @@ export class CommandService {
     this.requests.delete(id)
     this.resources.delete(id)
   }
-  history(): HistoryEntry[] { return this.store.history() }
+  history(): HistoryEntry[] {
+    return this.store.history().map((entry) => {
+      const commandAvailable = registry.some((definition) => definition.id === entry.request.commandId)
+      return { ...entry, commandAvailable, rerunnable: entry.rerunnable && commandAvailable }
+    })
+  }
   favorite(id: string, favorite: boolean) { getDefinition(id); this.store.favoriteCommand(id, favorite) }
   clearConfirmations() { this.confirmations.clear() }
 }

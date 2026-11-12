@@ -5,6 +5,20 @@ import type { IPty } from 'node-pty'
 import type { TerminalDataEvent, TerminalExitEvent } from '../src/shared/runtime'
 
 describe('terminal lifecycle', () => {
+  it('submits an initial command once, only after the shell prompt is ready', () => {
+    let onData!: (data: string) => void
+    const write = vi.fn(), dispose = vi.fn()
+    const fake = { pause: vi.fn(), write, onData: (listener: typeof onData) => { onData = listener; return { dispose } }, onExit: () => ({ dispose }) } as unknown as IPty
+    const manager = new TerminalManager(() => {}, () => {}, getShellEnvironment(), () => fake)
+    manager.startProgram({ executable: '/bin/zsh', argv: ['-f', '-i'], cwd: '/tmp', label: 'fixture', initialCommand: "source '/tmp/config with spaces/.zshrc'" })
+    onData('starting')
+    expect(write).not.toHaveBeenCalled()
+    onData('\x1b[?20'); onData('04h')
+    expect(write).toHaveBeenCalledExactlyOnceWith("\x15\x1b[200~source '/tmp/config with spaces/.zshrc'\x1b[201~\r")
+    onData('\x1b[?2004h')
+    expect(write).toHaveBeenCalledOnce()
+    expect(() => manager.startProgram({ executable: '/bin/zsh', argv: ['-i'], cwd: '/tmp', label: 'fixture', initialCommand: 'source bad\ncommand' })).toThrow('Unsafe initial')
+  })
   it('validates shell IDs, bounds sessions, applies acknowledgement backpressure and disposes listeners', async () => {
     let onData!: (data: string) => void
     const dispose = vi.fn()

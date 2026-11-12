@@ -3,6 +3,7 @@ import type { ApiResult } from './contracts'
 import type { ExecutionSnapshot, TerminalSession } from './runtime'
 
 export const commandRequestSchema = z.object({ commandId: z.string().min(1).max(80), params: z.record(z.string().max(40), z.union([z.string().max(2048), z.boolean()])).default({}), workspaceId: z.string().uuid().optional() }).strict()
+export const comparisonFilePickerSchema = z.object({ workspaceId: z.string().uuid().optional() }).strict()
 export const commandExecuteSchema = z.object({ request: commandRequestSchema, confirmationToken: z.string().uuid().optional() }).strict()
 export const searchSchema = z.object({ query: z.string().max(200).default(''), category: z.enum(['all', 'Git', 'General', 'Node', 'Flutter', 'System', 'Permissions', 'AI Developer CLI', 'SSH']).default('all'), risk: z.enum(['all', 'safe', 'caution', 'dangerous']).default('all'), platform: z.enum(['all', 'darwin', 'win32', 'linux']).default('all'), favoritesOnly: z.boolean().default(false) }).strict()
 export type CommandRequest = z.infer<typeof commandRequestSchema>
@@ -24,7 +25,7 @@ export interface CommandPreview {
   display: string; cwd: string; risk: CommandSummary['risk']; consequences: string[];
   confirmationToken?: string; expiresAt?: string; repository?: RepositoryStatus
 }
-export interface HistoryEntry { request: CommandRequest; execution: ExecutionSnapshot; rerunnable: boolean }
+export interface HistoryEntry { request: CommandRequest; execution: ExecutionSnapshot; rerunnable: boolean; commandAvailable?: boolean }
 export interface WorkspaceAPI {
   workspace: {
     open(id: string): Promise<ApiResult<null>>
@@ -36,6 +37,7 @@ export interface WorkspaceAPI {
     status(id: string): Promise<ApiResult<RepositoryStatus>>
   }
   library: {
+    chooseComparisonFile(input: z.infer<typeof comparisonFilePickerSchema>): Promise<ApiResult<string | null>>
     search(request: SearchRequest): Promise<ApiResult<CommandSummary[]>>
     preview(request: CommandRequest): Promise<ApiResult<CommandPreview>>
     execute(request: CommandRequest, confirmationToken?: string): Promise<ApiResult<{ executionId: string }>>

@@ -55,12 +55,46 @@ pack('node.runtime', 'Node Runtime Details', 'Show runtime versions and platform
 pack('flutter.version', 'Flutter Version', 'Show Flutter SDK version; may initialize SDK caches', 'Flutter', 'flutter', ['--suppress-analytics', '--version'], { risk: 'caution', mutation: true, network: true, supportedPlatforms: ['darwin', 'linux'] })
 pack('flutter.doctor', 'Flutter Doctor', 'Check the local Flutter development toolchain', 'Flutter', 'flutter', ['--suppress-analytics', 'doctor'], { risk: 'caution', mutation: true, network: true, supportedPlatforms: ['darwin', 'linux'] })
 pack('flutter.devices', 'Flutter Devices', 'Discover devices connected to this machine', 'Flutter', 'flutter', ['--suppress-analytics', 'devices'], { risk: 'caution', mutation: true, network: true, supportedPlatforms: ['darwin', 'linux'] })
-pack('dart.version', 'Dart Version', 'Show the installed Dart SDK version', 'Flutter', 'dart', ['--version'])
+pack('python.version', 'Python Version', 'Show the installed Python 3 version', 'System', 'python3', ['--version'])
+for (const [id, title, executable, args] of [
+  ['system.whoami', 'Current User', 'whoami', []],
+  ['system.hostname', 'Computer Hostname', 'hostname', []],
+  ['system.uname', 'Operating System Information', 'uname', ['-a']],
+  ['system.uptime', 'System Uptime', 'uptime', []],
+  ['system.date', 'Current Date and Time', 'date', []]
+] as const) pack(id, title, 'Read local system information without changing configuration', 'System', executable, [...args], { supportedPlatforms: ['darwin', 'linux'] })
 pack('system.disk', 'Disk Usage', 'Show filesystem capacity for the current directory', 'System', 'df', ['-h', '.'], { supportedPlatforms: ['darwin', 'linux'] })
 pack('system.port', 'Inspect Listening Port', 'List TCP listeners for a numeric port; no processes are killed', 'System', 'lsof', ['-nP', { flag: '-iTCP:', param: 'port' }, '-sTCP:LISTEN'], { parameters: [name('port', 'TCP Port', '3000')], supportedPlatforms: ['darwin', 'linux'] })
 pack('system.ports', 'List TCP Listening Ports', 'Show all TCP listening ports with process names and PIDs', 'System', 'lsof', ['-nP', '-iTCP', '-sTCP:LISTEN'], { supportedPlatforms: ['darwin', 'linux'], aliases: ['all listening ports', 'tcp ports', 'xem tat ca TCP listening ports', 'xem tất cả cổng TCP'] })
 pack('system.port.process', 'Find Process Using Port', 'Show processes using a TCP or UDP port, including their PIDs', 'System', 'lsof', ['-nP', { flag: '-i:', param: 'port' }], { parameters: [name('port', 'Port', '3000')], supportedPlatforms: ['darwin', 'linux'], aliases: ['process using port', 'pid port', 'xem process dang su dung port', 'xem process đang sử dụng port'] })
 pack('system.port.stop', 'Stop Process on Port', 'Stop a TCP listener with SIGTERM after reviewing its PID; defaults to port 3000', 'System', 'kill', ['-TERM', { param: 'pid' }], { parameters: [name('port', 'TCP Port', '3000'), { key: 'pid', label: 'PID (optional, required for multiple listeners)', type: 'string', required: false, defaultValue: '' }], risk: 'dangerous', mutation: true, supportedPlatforms: ['darwin', 'linux'], aliases: ['kill port', 'free port', 'stop process port 3000', 'dung process dang chiem port', 'dừng process đang chiếm port'] })
+const comparisonParameters = () => [name('leftFile', 'First file', 'before.txt'), name('rightFile', 'Second file', 'after.txt')]
+const comparisonOptions = { supportedPlatforms: ['darwin', 'linux'] as Definition['supportedPlatforms'], successExitCodes: [0, 1] }
+pack('compare.unified', 'Compare Files', 'Show a unified diff between two regular files', 'System', 'diff', ['-u', param('leftFile'), param('rightFile')], { ...comparisonOptions, parameters: comparisonParameters(), aliases: ['diff', 'file comparison', 'compare files'] })
+pack('compare.brief', 'Check Whether Files Differ', 'Report whether two files differ without printing their contents', 'System', 'diff', ['-q', param('leftFile'), param('rightFile')], { ...comparisonOptions, parameters: comparisonParameters() })
+pack('compare.whitespace', 'Compare Files (Ignore Whitespace)', 'Show a unified diff ignoring whitespace differences', 'System', 'diff', ['-u', '-w', param('leftFile'), param('rightFile')], { ...comparisonOptions, parameters: comparisonParameters() })
+pack('compare.case', 'Compare Files (Ignore Case)', 'Show a unified diff ignoring letter case', 'System', 'diff', ['-u', '-i', param('leftFile'), param('rightFile')], { ...comparisonOptions, parameters: comparisonParameters() })
+pack('compare.bytes', 'Compare Files Byte by Byte', 'Report the first differing byte or an EOF difference', 'System', 'cmp', [param('leftFile'), param('rightFile')], { ...comparisonOptions, parameters: comparisonParameters(), aliases: ['cmp', 'binary comparison', 'compare bytes'] })
+const fileOptions = { supportedPlatforms: ['darwin', 'linux'] as Definition['supportedPlatforms'], requiresRepository: true, mutation: true, risk: 'caution' as const }
+const fileTarget = () => [name('targetPath', 'Path inside repository', 'new-file.txt')]
+const filePair = () => [name('sourcePath', 'Source file', 'source.txt'), name('destinationPath', 'Destination file (full path)', 'destination.txt')]
+pack('files.create', 'Create File', 'Create a new empty file without replacing existing paths', 'System', 'touch', [param('targetPath')], { ...fileOptions, parameters: fileTarget(), aliases: ['touch', 'create file', 'file operations'] })
+pack('files.mkdir', 'Create Directory', 'Create one directory under an existing parent', 'System', 'mkdir', [param('targetPath')], { ...fileOptions, parameters: [name('targetPath', 'Directory path inside repository', 'new-directory')] })
+pack('files.copy', 'Copy File', 'Copy one regular file to a new destination', 'System', 'cp', ['-n', param('sourcePath'), param('destinationPath')], { ...fileOptions, parameters: filePair() })
+pack('files.move', 'Move File', 'Move one regular file to a new destination', 'System', 'mv', ['-n', param('sourcePath'), param('destinationPath')], { ...fileOptions, parameters: filePair() })
+pack('files.rename', 'Rename File', 'Rename one regular file using its full destination path', 'System', 'mv', ['-n', param('sourcePath'), param('destinationPath')], { ...fileOptions, parameters: filePair() })
+pack('files.delete', 'Delete File', 'Permanently delete one regular file after confirmation', 'System', 'rm', [param('targetPath')], { ...fileOptions, parameters: fileTarget(), risk: 'dangerous' })
+pack('files.rmdir', 'Remove Empty Directory', 'Remove a directory only if it is empty', 'System', 'rmdir', [param('targetPath')], { ...fileOptions, parameters: [name('targetPath', 'Directory path inside repository', 'empty-directory')], risk: 'dangerous' })
+const findParameters = () => [name('searchRoot', 'Search directory', '/'), { ...choice('maxDepth', 'Maximum depth', ['all', '1', '2', '3', '5', '10', '20'], 'all'), optionLabels: { all: 'No limit' } }]
+const findOptions = { supportedPlatforms: ['darwin', 'linux'] as Definition['supportedPlatforms'] }
+const findBase: Argument[] = ['-P', param('searchRoot'), '-mindepth', '1']
+pack('find.name', 'Find by Name', 'Find files by a wildcard pattern, such as *.ts or README*', 'System', 'find', [...findBase, '-type', 'f', '-name', param('pattern'), '-print'], { ...findOptions, parameters: [...findParameters(), name('pattern', 'Filename pattern', '*.ts')] })
+pack('find.iname', 'Find by Name (Ignore Case)', 'Find files by name without case sensitivity', 'System', 'find', [...findBase, '-type', 'f', '-iname', param('pattern'), '-print'], { ...findOptions, parameters: [...findParameters(), name('pattern', 'Filename pattern', '*readme*')] })
+pack('find.extension', 'Find by Extension', 'Find files with a selected extension', 'System', 'find', [...findBase, '-type', 'f', '-name', { flag: '*.', param: 'extension' }, '-print'], { ...findOptions, parameters: [...findParameters(), name('extension', 'Extension (without dot)', 'ts')] })
+pack('find.directory', 'Find Directories', 'Find directories by a wildcard name pattern', 'System', 'find', [...findBase, '-type', 'd', '-name', param('pattern'), '-print'], { ...findOptions, parameters: [...findParameters(), name('pattern', 'Directory name pattern', '*')] })
+pack('find.empty', 'Find Empty Files or Directories', 'Find empty regular files or directories', 'System', 'find', [...findBase, '-type', param('entryType'), '-empty', '-print'], { ...findOptions, parameters: [...findParameters(), { ...choice('entryType', 'Find', ['f', 'd']), optionLabels: { f: 'Files', d: 'Directories' } }] })
+pack('find.size', 'Find Large Files', 'Find regular files larger than a specified size', 'System', 'find', [...findBase, '-type', 'f', '-size', { flag: '+', param: 'size' }, '-print'], { ...findOptions, parameters: [...findParameters(), name('size', 'Minimum size (e.g. 100M, 1G, 512k)', '100M')] })
+pack('find.modified', 'Find Recently Modified Files', 'Find regular files modified within the selected number of days', 'System', 'find', [...findBase, '-type', 'f', '-mtime', { flag: '-', param: 'days' }, '-print'], { ...findOptions, parameters: [...findParameters(), choice('days', 'Modified within (days)', ['1', '3', '7', '14', '30'], '7')] })
 const sshPlatforms: Definition['supportedPlatforms'] = ['darwin', 'linux']
 const sshConnection = [name('host', 'Hostname or Alias', 'github.com'), name('user', 'SSH User', 'git'), name('port', 'SSH Port', '22')]
 pack('ssh.connect', 'Connect with SSH', 'Open an interactive SSH connection using your OpenSSH configuration', 'SSH', 'ssh', ['-p', param('port'), '-l', param('user'), param('host')], { parameters: sshConnection, supportedPlatforms: sshPlatforms, interactive: true, mutation: true, risk: 'caution', network: true, aliases: ['ssh login', 'connect server', 'kết nối SSH'] })
@@ -140,6 +174,17 @@ for (const [action, title, args, parameters] of [
 pack('ngrok.config.check', 'Check ngrok Config', 'Validate the existing ngrok agent configuration', 'General', 'ngrok', ['config', 'check'])
 pack('ngrok.version', 'ngrok Version', 'Show the installed ngrok agent version', 'General', 'ngrok', ['version'])
 pack('ngrok.help', 'ngrok Help', 'Show ngrok CLI commands and usage', 'General', 'ngrok', ['help'])
+const zshPlatforms: Definition['supportedPlatforms'] = ['darwin', 'linux']
+pack('zsh.version', 'Zsh Version', 'Show the installed Zsh version', 'System', 'zsh', ['--version'], { supportedPlatforms: zshPlatforms })
+pack('zsh.help', 'Zsh Help', 'Show Zsh invocation flags and options', 'System', 'zsh', ['--help'], { supportedPlatforms: zshPlatforms })
+pack('zsh.start', 'Open Zsh', 'Open an interactive Zsh using your existing startup configuration', 'System', 'zsh', ['-i'], { supportedPlatforms: zshPlatforms, interactive: true, mutation: true, risk: 'caution' })
+pack('zsh.source', 'Reload .zshrc', 'Source your .zshrc in a new interactive Zsh tab', 'System', 'zsh', ['-f', '-i'], { supportedPlatforms: zshPlatforms, interactive: true, mutation: true, risk: 'caution', aliases: ['source ~/.zshrc', 'source zshrc', 'reload zsh configuration'] })
+pack('zsh.clean', 'Open Zsh Without User Startup Files', 'Open interactive Zsh with user startup files disabled', 'System', 'zsh', ['-f', '-i'], { supportedPlatforms: zshPlatforms, interactive: true, mutation: true, risk: 'caution', aliases: ['zsh clean', 'zsh no rc', 'zsh -f'] })
+pack('zsh.path', 'Show Zsh PATH', 'List inherited PATH entries in a fresh Zsh without user startup files', 'System', 'zsh', ['-f', '-c', 'print -rl -- $path'], { supportedPlatforms: zshPlatforms })
+pack('zsh.options', 'Show Zsh Options', 'Show options in a fresh Zsh without user startup files', 'System', 'zsh', ['-f', '-c', 'set -o'], { supportedPlatforms: zshPlatforms })
+pack('zsh.keybindings', 'Show Zsh Default Keybindings', 'List default keybindings without loading your user configuration', 'System', 'zsh', ['-f', '-c', 'bindkey'], { supportedPlatforms: zshPlatforms })
+pack('zsh.which', 'Find Command in Zsh', 'Find command locations or builtin definitions without executing the command', 'System', 'zsh', ['-f', '-c', 'whence -a -- "$1"', 'devcommand', param('commandName')], { parameters: [name('commandName', 'Command name', 'git')], supportedPlatforms: zshPlatforms, aliases: ['zsh which', 'zsh whence', 'find executable'] })
+pack('zsh.syntax', 'Check Zsh Config Syntax', 'Parse a selected Zsh startup file without executing its commands', 'System', 'zsh', ['-f', '-n', '--', param('configFile')], { parameters: [choice('configFile', 'Config file', ['.zshrc', '.zprofile', '.zshenv', '.zlogin', '.zlogout'])], supportedPlatforms: zshPlatforms, aliases: ['zsh syntax', 'zshrc check', 'zsh -n'] })
 export const registry: readonly Definition[] = definitions
 export function getDefinition(id: string): Definition {
   const definition = registry.find((entry) => entry.id === id)
@@ -168,6 +213,12 @@ export function validateParams(definition: Definition, input: Record<string, unk
       if (!valid || /[\s\\]/.test(values.originUrl)) throw new PublicError('Use a local HTTP(S) URL, such as http://localhost:3000, without credentials or query parameters.')
     }
   }
+  if (definition.id.startsWith('find.')) {
+    if (values.extension && !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,39}$/.test(values.extension)) throw new PublicError('Use an extension without a leading dot, wildcard or path separator.')
+    if (values.size && !/^[1-9]\d{0,5}[ckMG]$/.test(values.size)) throw new PublicError('Use a positive size with c, k, M or G, such as 100M.')
+    if (values.pattern?.includes('/')) throw new PublicError('Use a filename pattern without directory separators. Choose the search directory separately.')
+  }
+  if (definition.id === 'zsh.which' && !/^[A-Za-z0-9_][A-Za-z0-9_.+-]{0,79}$/.test(values.commandName)) throw new PublicError('Use a command name without options, paths, whitespace or shell expressions.')
   if (definition.category === 'Permissions') {
     const identity = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,79}$/
     if (values.mode?.startsWith('-')) throw new PublicError('Specify who to change, for example u-w or go-r.')

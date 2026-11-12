@@ -1,13 +1,14 @@
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync, statSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { conciseCommandDisplay, hasControlCharacters } from '../../shared/text'
-import type { BrowserWindow } from 'electron'
+import { dialog, type BrowserWindow } from 'electron'
 import { z } from 'zod'
 import { executeSchema, idSchema, terminalAckSchema, terminalCreateSchema, terminalResizeSchema, terminalWriteSchema } from '../../shared/runtime'
 import { TerminalManager } from '../services/terminal/manager'
 import type { SettingsStore } from '../infrastructure/database/store'
 import { WorkspaceService, PublicError } from '../services/workspace/service'
 import { CommandService } from '../services/commands/service'
-import { commandRequestSchema, commandExecuteSchema, searchSchema, favoriteMoveSchema } from '../../shared/commands'
+import { commandRequestSchema, comparisonFilePickerSchema, commandExecuteSchema, searchSchema, favoriteMoveSchema } from '../../shared/commands'
 import { GitService } from '../services/git/service'
 import { GitWatcher } from '../services/git/watcher'
 import { gitSnapshotSchema, gitDiffSchema } from '../../shared/git'
@@ -68,6 +69,22 @@ export function registerRuntime(handle: IpcHandle, window: BrowserWindow, store:
   handle('library:favorite', (payload) => { const { commandId, favorite } = z.object({ commandId: z.string().max(80), favorite: z.boolean() }).strict().parse(payload); commands.favorite(commandId, favorite); return null })
   handle('library:move-favorite', (payload) => { commands.moveFavorite(favoriteMoveSchema.parse(payload)); return null })
   handle('library:clear-history', (payload) => { empty(payload); commands.clearHistory(); return null })
+  let choosingComparisonFile = false
+  handle('library:choose-comparison-file', async (payload) => {
+    const { workspaceId } = comparisonFilePickerSchema.parse(payload)
+    if (choosingComparisonFile) throw new PublicError('Finish choosing a file before opening another picker.')
+    choosingComparisonFile = true
+    try {
+      const defaultPath = workspaceId ? (await workspace.resolve(workspaceId)).rootPath : homedir()
+      const selection = await dialog.showOpenDialog(window, { title: 'Choose comparison file', buttonLabel: 'Choose file', defaultPath, properties: ['openFile'] })
+      if (selection.canceled || !selection.filePaths[0]) return null
+      try {
+        const path = realpathSync(selection.filePaths[0])
+        if (path.length > 2048 || hasControlCharacters(path) || !statSync(path).isFile()) throw new Error()
+        return path
+      } catch { throw new PublicError('Choose an existing regular file with a supported path.') }
+    } finally { choosingComparisonFile = false }
+  })
   handle('library:history', (payload) => { empty(payload); return commands.history() })
   handle('library:launch', (payload) => {
     const { request, confirmationToken } = z.object({ request: commandRequestSchema, confirmationToken: z.string().uuid() }).strict().parse(payload)
@@ -88,6 +105,7 @@ export function registerRuntime(handle: IpcHandle, window: BrowserWindow, store:
     return session
   })
   handle('commands:list', (payload) => { empty(payload); return runner.list() })
+  handle('commands:clear-finished', (payload) => { empty(payload); return runner.clearFinished() })
   handle('commands:cancel', async (payload) => { await runner.cancel(idSchema.parse(payload)); return null })
   let pending = Promise.resolve()
   const reset = () => {

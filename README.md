@@ -39,7 +39,9 @@ The packaged `.app` includes its own Electron runtime; Node.js is not required j
 | Repositories and Git Manager | `git` |
 | SSH | `ssh`, `ssh-keygen`, `ssh-add`; a running agent is required to manage identities |
 | Node/npm | `node`, `npm` |
-| Flutter/Dart | `flutter`, `dart` |
+| Flutter | `flutter` |
+| Zsh | `zsh` |
+| File Comparison | `diff`, `cmp` |
 | Ports & Processes | `lsof`, `ps`, `kill` |
 | Permissions on macOS | `ls`, `chmod`, `chown` |
 | ACL on Linux | `getfacl`, `setfacl` |
@@ -269,9 +271,80 @@ Paths must belong to the selected repository. Operations apply to one path witho
 
 - Node/npm versions, runtime information, and direct dependencies.
 - `npm ls` uses `--offline --ignore-scripts` and does not run repository package scripts.
-- Flutter version, doctor, devices, and Dart version.
+- Flutter version, doctor, and devices.
 - Flutter actions require confirmation because the SDK may initialize caches or contact services; analytics are suppressed for each invocation.
 - Working directory, directory listing, and disk usage.
+
+### File Comparison
+
+Open **System → File Comparison**, or search for `diff`, `cmp` or `compare`. Five actions share one item:
+
+| Action | Command |
+| --- | --- |
+| Unified diff | `diff -u <first-file> <second-file>` |
+| Quick check | `diff -q <first-file> <second-file>` |
+| Ignore whitespace | `diff -u -w <first-file> <second-file>` |
+| Ignore case | `diff -u -i <first-file> <second-file>` |
+| Byte comparison | `cmp <first-file> <second-file>` |
+
+Use the **folder icon** beside either input (tooltip: Choose first/second file) to open the native file picker, or type/paste a path manually. Cancel keeps the current value. The picker starts at the selected repository, or home without a repository. Selected paths update the preview automatically.
+
+Both inputs must resolve to regular files. Absolute paths are accepted; relative paths start at the selected workspace, or home without a workspace. Symbolic links resolve to their targets. These actions are read-only on macOS/Linux and need no mutation confirmation. Copy and Insert use quoted, resolved paths.
+
+Exit `0` means equal under the selected rules, `1` means different, and higher codes indicate errors. Both `0` and `1` appear as successful comparisons; the exit code and output distinguish equality from differences. Equal files usually produce no output. Diff output may contain file contents and is saved in Execution History; managed timeout/output limits apply.
+
+### File Operations
+
+Open **System → File Operations** to create files or directories, copy/move/rename a regular file, delete a regular file, or remove an empty directory. All seven actions share one item and require a selected working-tree repository on macOS/Linux.
+
+Paths are relative to the repository and checked at preview and run. Parent directories must exist. Preview resolves full paths and every Run requires a one-use confirmation bound to source/destination metadata. Changed paths require a fresh preview. Existing destinations, traversal, `.git` metadata, symbolic links and hard-linked files are refused. Copy/move use no-clobber flags as an additional safeguard. These CLI operations are not atomically isolated from concurrent filesystem changes; do not modify the same paths in another tool during execution. Enter the full destination filename, rather than only its directory.
+
+File deletion is permanent and does not use Trash. Directory removal uses `rmdir` and refuses nonempty directories. This pack does not recursively copy/move directories, recursively delete, create missing parents, overwrite existing files or run sudo. Copy/Insert provide the reviewed shell command; manually executing a terminal draft is outside managed confirmation and revalidation.
+
+### Find
+
+Open **System → Find**, or search for `find`. All seven actions share one item:
+
+| Action | Example predicates |
+| --- | --- |
+| By name | `-type f -name '*.ts'` |
+| By name (ignore case) | `-type f -iname '*readme*'` |
+| By extension | `-type f -name '*.ts'` |
+| Directories | `-type d -name '*'` |
+| Empty files or directories | `-type f -empty` or `-type d -empty` |
+| Large files | `-type f -size +100M` |
+| Recently modified | `-type f -mtime -7` |
+
+The default search directory is `/` (the whole filesystem), with **No limit** for maximum depth. Choose a narrower directory or a numeric depth limit when needed. System-protected directories may produce permission errors or partial results; no automatic sudo is used. Relative directories start at the selected workspace, or home when no workspace is selected; absolute paths are also supported. Preview resolves the directory and quotes patterns for Copy/Insert. Managed execution passes arguments directly, without a shell.
+
+Searches are read-only on macOS/Linux, include hidden directories, exclude the starting directory itself, and do not follow nested symbolic links (`-P`). There are no delete or exec actions. Empty matches succeed; permission failures can leave partial results. Large searches have a 60-second managed timeout and the standard output limits; use Cancel to stop a running search.
+
+### Zsh
+
+Search for `zsh` or open **System → Zsh**. All actions share one group:
+
+| Action | Main command |
+| --- | --- |
+| Open Zsh | `zsh -i` |
+| Reload .zshrc | `source ~/.zshrc` (uses `$ZDOTDIR/.zshrc` when set) |
+| Open without user startup files | `zsh -f -i` |
+| Version | `zsh --version` |
+| Help | `zsh --help` |
+| PATH entries | `zsh -f -c 'print -rl -- $path'` |
+| Default options | `zsh -f -c 'set -o'` |
+| Default keybindings | `zsh -f -c 'bindkey'` |
+| Find command | `zsh -f -c 'whence -a -- "$1"' devcommand git` |
+| Check config syntax | `zsh -f -n -- <startup-file>` |
+
+Reload .zshrc opens a new interactive Zsh with `-f`, then sources the selected `.zshrc` once after the prompt is ready. Aliases, functions and environment changes remain available in that tab; existing tabs are unchanged. The same absolute `ZDOTDIR`/home file validation as syntax checking applies. Sourcing executes the file after confirmation; it does not edit it. Copy and Insert provide the source command for manual use.
+
+Open Zsh uses your existing startup files after confirmation. The `-f` session skips user startup files but inherits the environment and can still read the system `/etc/zshenv`; it is not a sandbox. Both actions open Zsh directly, so Ctrl+C interrupts a foreground job while the shell stays available.
+
+PATH, options, keybindings, and command lookup inspect a fresh `-f` shell rather than the state of another terminal tab. Lookup passes a validated command name as a positional argument and does not execute that command.
+
+Syntax checking accepts `.zshrc`, `.zprofile`, `.zshenv`, `.zlogin`, or `.zlogout` from an absolute `ZDOTDIR`, or your home directory when `ZDOTDIR` is unset. It requires a regular, nonsymlink file no larger than 256 KiB. `-n` parses the selected file without executing its commands or modifying it; syntax-check output is omitted from persistent history. User startup files are not created, edited, sourced, or reloaded automatically by the inspection actions.
+
+See the [Zsh invocation reference](https://zsh.sourceforge.io/Doc/Release/Invocation.html) for startup-file and invocation behavior.
 
 ### AI Developer CLI
 
@@ -329,7 +402,26 @@ Tunnels run in the terminal. **Ctrl+C** stops the agent and returns to the shell
 
 **History** stores up to 100 managed runs with status, timing, exit code, and bounded/redacted output. It supports status filtering, **Clear history**, and Review & rerun. Rerun returns the request to a form for revalidation instead of replaying saved argv automatically. Sensitive parameters must be entered again.
 
-**Shell Tools → Process Core** runs `git --version`/`node --version` checks and displays managed executions from the current session. Running commands can be cancelled; Git headings use concise commands.
+**Shell Tools → Process Core** offers these fixed, read-only checks and displays managed executions from the current session:
+
+| Command | Purpose |
+| --- | --- |
+| `git --version` | Git version |
+| `node --version` | Node.js version |
+| `npm --version` | npm version |
+| `python3 --version` | Python 3 version |
+| `docker --version` | Docker client version; no daemon connection |
+| `ssh -V` | OpenSSH version; no host connection |
+| `whoami` | Current OS user |
+| `hostname` | Computer hostname |
+| `pwd` | Check working directory (home) |
+| `uname -a` | OS/kernel information |
+| `uptime` | System uptime |
+| `date` | Current system date/time |
+
+Select a command to see its purpose, then click **Run check**. Checks run from your home directory with backend-owned arguments; custom executables, arguments and shell expressions are not accepted. Missing tools produce an installation/PATH error. System information commands require macOS/Linux. **Clear** removes only finished runs from the current session list, preserving running processes and saved Execution History. Running commands can be cancelled; Git headings use concise commands. Docker remains absent from the sidebar; its version check does not restore Docker management.
+
+Standard error is an output channel, not a failure indicator: Git progress messages often use it. Successful/running output uses normal text colors; failed/timed-out stderr and explicit execution errors receive error styling. Exit status and original output are preserved.
 
 Terminal input/output is not saved in History. Clearing history does not delete project files or terminal output, or automatically cancel running processes.
 
@@ -369,6 +461,10 @@ Closing the window, reloading the renderer, or quitting the app terminates its m
 | `Alt + ↑/↓` on a Favorites grip | Reorder groups |
 | `Esc` in Search commands | Clear the list search query |
 
+The command palette uses a compact search header and scrollable command rows. Use ↑/↓ to navigate, Enter to open configuration, and Esc to close. Selecting a result does not execute it. The palette supports dark/light themes, accessible selection, empty results and retry after loading errors.
+
+The Keyboard shortcuts dialog displays platform-specific keycaps (⌘ on macOS, Ctrl on Windows/Linux), icons and brief action descriptions. Close it with Esc, the close icon or a backdrop click.
+
 App shortcuts do not intercept keys while terminal input has focus. Selects and dialogs handle keyboard events separately to avoid executing commands behind a popup.
 
 ## Data and security
@@ -395,7 +491,7 @@ The database uses migrations and is not silently reset when corrupted. Migration
 - Managed commands use backend-owned executable/argument arrays with `shell: false`.
 - Every mutating managed action requires a one-use confirmation token that expires after 60 seconds and is bound to the relevant request/state.
 - The backend rechecks the appropriate repository, refs, configuration, process, or metadata before execution.
-- The managed runner allows up to 4 concurrent processes, with a normal timeout of 10 seconds or 60 seconds for network commands.
+- The managed runner allows up to 4 concurrent processes, with a normal timeout of 10 seconds or 60 seconds for network commands and Find searches.
 - Retained output is capped at 128 Ki characters/512 chunks per execution; a process is stopped after more than 1 MiB is received. Known credential patterns are redacted before persistence.
 - Runtime retains up to 12 execution records; persistent history retains up to 100 records.
 - Native clipboard integration supports copying in packaged Electron builds.
@@ -469,11 +565,20 @@ Build before running E2E tests from source:
 npm run build
 npm run test:e2e
 npm run test:e2e:runtime
+npm run test:e2e:shell-tools
+npm run test:e2e:find
+npm run test:e2e:palette
+npm run test:e2e:shortcuts
 npm run test:e2e:workspace
 npm run test:e2e:git
 npm run test:e2e:extended
 npm run test:e2e:command-packs
 npm run test:e2e:ports
+npm run test:e2e:files
+npm run test:e2e:compare
+npm run test:e2e:output
+npm run test:e2e:zsh
+npm run test:e2e:zsh-source
 npm run test:e2e:favorites
 npm run test:e2e:ui
 ```
@@ -481,12 +586,21 @@ npm run test:e2e:ui
 | Suite | Coverage |
 | --- | --- |
 | `test:e2e` | Isolation, IPC, navigation, themes, and settings persistence |
+| `test:e2e:shortcuts` | Platform keycaps, shortcut dialog dismissal/focus, modal command isolation, themes and minimum window sizing |
+| `test:e2e:palette` | Palette keyboard/pointer selection, focus restoration, empty/error recovery, themes and compact window sizing |
+| `test:e2e:find` | Whole-machine/no-depth-limit defaults with and without a selected repository, using a fake find executable |
+| `test:e2e:shell-tools` | Twelve fixed CLI/system checks using fake executables, missing-tool feedback, clear finished runs and IPC restrictions |
 | `test:e2e:runtime` | PTYs, multiple tabs, Ctrl+C, session closing, and process cleanup |
 | `test:e2e:workspace` | Repository picker, preview/confirm/run, history, and insertion |
 | `test:e2e:git` | Git Manager against temporary repositories |
 | `test:e2e:extended` | SSH metadata/keygen/config, fake agent/network, and extended CLIs |
 | `test:e2e:command-packs` | Permissions, fake AI/Cloudflare/ngrok CLIs, and shell continuity after Ctrl+C |
+| `test:e2e:compare` | Grouped comparisons, equal/different status, Copy, retained inputs and removed Dart Version |
+| `test:e2e:files` | Grouped file operations, confirmation/cancellation and real results in an isolated repository |
 | `test:e2e:ports` | Port inspection and fixture-listener termination |
+| `test:e2e:output` | Neutral successful stderr, failed-output styling, and unchanged status/text across result views |
+| `test:e2e:zsh-source` | Source confirmation, one-time loading and persistent aliases/environment with an isolated `.zshrc` |
+| `test:e2e:zsh` | Zsh inspection, syntax-only checks, isolated startup files, and Ctrl+C shell continuity |
 | `test:e2e:favorites` | Drag/drop, keyboard ordering, filters, Dashboard, and restart persistence |
 | `test:e2e:ui` | Responsive layouts, dropdowns, Dashboard, sidebar, dock, and keyboard behavior |
 

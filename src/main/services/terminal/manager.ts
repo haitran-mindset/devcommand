@@ -9,7 +9,7 @@ import { terminateTree } from '../../infrastructure/process/terminate'
 
 interface Session {
   summary: TerminalSession; pty: IPty; sequence: number; acknowledged: number; pending: Map<number, number>;
-  buffered: number; onClosed?: () => void; draft?: string; readiness: string; listeners: IDisposable[]; closing?: Promise<void>
+  buffered: number; onClosed?: () => void; draft?: string; submitDraft?: boolean; readiness: string; listeners: IDisposable[]; closing?: Promise<void>
 }
 export class TerminalManager {
   private sessions = new Map<string, Session>()
@@ -33,7 +33,7 @@ export class TerminalManager {
     if (!shell) throw new Error('Select an installed shell.')
     return this.spawnProgram(shell, process.platform === 'win32' ? [] : ['-i'], cwd, this.environment.shells.find((item) => item.id === options.shellId)!.label, options.cols, options.rows)
   }
-  startProgram(program: { executable: string; argv: string[]; cwd: string; label: string; onClosed?: () => void; keepShell?: boolean }): TerminalSession {
+  startProgram(program: { executable: string; argv: string[]; cwd: string; label: string; onClosed?: () => void; keepShell?: boolean; initialCommand?: string }): TerminalSession {
     if (program.keepShell && process.platform !== 'win32') {
       const preferred = this.environment.paths.get(this.environment.defaultShellId)
       const shell = preferred && /\/(?:zsh|bash|sh|dash|ksh)$/.test(preferred) ? preferred : [...this.environment.paths.values()].find((path) => /\/(?:zsh|bash|sh|dash|ksh)$/.test(path))
@@ -44,7 +44,14 @@ export class TerminalManager {
       const command = [program.executable, ...program.argv].map(quote).join(' ')
       return this.spawnProgram(shell, ['-i', '-c', `trap ':' INT; ${command}; exec ${quote(shell)} -i`], program.cwd, program.label, 100, 24, program.onClosed)
     }
-    return this.spawnProgram(program.executable, program.argv, program.cwd, program.label, 100, 24, program.onClosed)
+    if (program.initialCommand && (hasControlCharacters(program.initialCommand) || program.initialCommand.length > 8192)) throw new Error('Unsafe initial terminal command')
+    const session = this.spawnProgram(program.executable, program.argv, program.cwd, program.label, 100, 24, program.onClosed)
+    if (program.initialCommand) {
+      const entry = this.get(session.id)
+      entry.draft = program.initialCommand
+      entry.submitDraft = true
+    }
+    return session
   }
   private spawnProgram(executable: string, argv: string[], cwd: string, label: string, cols: number, rows: number, onClosed?: () => void): TerminalSession {
     if (this.stopping || this.sessions.size >= 8) throw new Error('Close a terminal tab before opening another (maximum 8).')
@@ -61,7 +68,8 @@ export class TerminalManager {
         if (entry.readiness.includes('\x1b[?2004h')) {
           const text = entry.draft
           entry.draft = undefined
-          pty.write('\x15\x1b[200~' + text + '\x1b[201~')
+          pty.write('\x15\x1b[200~' + text + '\x1b[201~' + (entry.submitDraft ? '\r' : ''))
+          entry.submitDraft = false
         }
       }
       for (const chunk of textChunks(data, 8192)) {

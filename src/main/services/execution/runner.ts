@@ -11,7 +11,7 @@ export interface ProcessDefinition { commandId: string; executable: string; argv
 interface Job {
   snapshot: ExecutionSnapshot; successExitCodes: number[]; child: ChildProcess; sequence: number; received: number; stored: number;
   redactors: { stdout: LineRedactor; stderr: LineRedactor }; timer: ReturnType<typeof setTimeout>;
-  termination?: Promise<void>; done: Promise<void>; finish: () => void; ended: boolean
+  termination?: Promise<void>; done: Promise<void>; finish: () => void; ended: boolean; terminating: boolean
 }
 function managedEnvironment() {
   const env = childEnvironment()
@@ -40,7 +40,7 @@ export class ManagedRunner {
       successExitCodes: definition.successExitCodes ?? [0],
       snapshot: { id, commandId: definition.commandId, preview: definition.preview, status: 'running', startedAt: new Date().toISOString(), exitCode: null, signal: null, output: [], truncated: false },
       child, sequence: 0, received: 0, stored: 0, redactors: { stdout: new LineRedactor(definition.secrets), stderr: new LineRedactor(definition.secrets) },
-      timer: setTimeout(() => { void this.stop(job, 'timed-out') }, definition.timeoutMs ?? 10000), done, finish, ended: false
+      timer: setTimeout(() => { void this.stop(job, 'timed-out') }, definition.timeoutMs ?? 10000), done, finish, ended: false, terminating: false
     }
     this.jobs.set(id, job)
     for (const stream of ['stdout', 'stderr'] as const) {
@@ -96,6 +96,7 @@ export class ManagedRunner {
     if (job.ended) return job.termination ?? Promise.resolve()
     if (job.termination) return job.termination
     job.snapshot.status = status
+    job.terminating = true
     clearTimeout(job.timer)
     const termination = (async () => {
       if (job.child.pid) await terminateTree(job.child.pid, process.platform !== 'win32')
@@ -105,7 +106,7 @@ export class ManagedRunner {
         this.end(job, null, null)
       }
       await job.done
-    })()
+    })().finally(() => { job.terminating = false; this.prune() })
     job.termination = termination
     return termination
   }
@@ -114,11 +115,18 @@ export class ManagedRunner {
     if (!job) throw new Error('Execution is no longer available.')
     return this.stop(job, 'cancelled')
   }
+  clearFinished(): number {
+    let cleared = 0
+    for (const [id, job] of this.jobs) {
+      if (job.ended && !job.terminating) { this.jobs.delete(id); cleared++ }
+    }
+    return cleared
+  }
   private prune() {
     if (this.jobs.size <= 12) return
     for (const [id, job] of this.jobs) {
       if (this.jobs.size <= 12) break
-      if (job.ended) this.jobs.delete(id)
+      if (job.ended && !job.terminating) this.jobs.delete(id)
     }
   }
   async closeAll() {

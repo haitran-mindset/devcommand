@@ -1,12 +1,15 @@
 import { textChunks } from '../src/shared/text'
 import { describe, expect, it } from 'vitest'
-import { executeSchema, terminalAckSchema, terminalCreateSchema, terminalResizeSchema, terminalWriteSchema } from '../src/shared/runtime'
+import { shellChecks, executeSchema, terminalAckSchema, terminalCreateSchema, terminalResizeSchema, terminalWriteSchema } from '../src/shared/runtime'
 import { descendants } from '../src/main/infrastructure/process/terminate'
 import { childEnvironment } from '../src/main/services/terminal/environment'
 
 describe('runtime boundary validation', () => {
   it('allows only fixed managed command IDs without arbitrary process options', () => {
-    expect(executeSchema.parse({ commandId: 'git.version' })).toEqual({ commandId: 'git.version' })
+    for (const check of shellChecks) expect(executeSchema.parse({ commandId: check.id })).toEqual({ commandId: check.id })
+    expect(shellChecks).toHaveLength(12)
+    expect(executeSchema.safeParse({ commandId: 'ssh.agent.clear' }).success).toBe(false)
+    expect(executeSchema.safeParse({ commandId: 'system.date', argv: ['010100002026'] }).success).toBe(false)
     for (const value of [{ commandId: 'rm' }, { commandId: 'git.version', executable: 'sh' }, { commandId: 'node.version', argv: ['-e', 'malicious()'] }, { commandId: 'git.version', cwd: '/' }]) expect(executeSchema.safeParse(value).success).toBe(false)
   })
   it('bounds terminal inputs, dimensions and session IDs', () => {

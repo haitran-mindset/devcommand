@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link as RouterLink, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { Check, CheckCircle2, ChevronDown, ChevronRight, CircleHelp, Database, Folder, FolderOpen, GitBranch, GitCommitHorizontal, House, Info, KeyRound, LayoutGrid, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radio, RefreshCw, Search, Settings, SquareTerminal, Sun, Terminal, X, Clock, Archive, type LucideIcon } from 'lucide-react'
+import { KeyboardShortcuts } from './components/KeyboardShortcuts'
 import { Button } from './components/ui/button'
 import { cn } from './lib/utils'
 import { useSettings, useUpdateSettings } from './lib/settings'
 import { useSession } from './lib/session'
 import { TerminalDock } from './features/terminal/TerminalDock'
 import { ManagedPanel } from './features/execution/ManagedPanel'
+import { CommandPalette } from './features/commands/CommandPalette'
 import { CommandExplorer } from './features/commands/CommandExplorer'
 import { RepositoryPicker } from './features/workspace/RepositoryPicker'
 import { WorkspacesPage } from './features/workspace/WorkspacesPage'
@@ -96,9 +98,7 @@ export function App() {
 
   useExecutionRefresh()
   const [paletteOpen, setPaletteOpen] = useState(false)
-  const palette = useRef<HTMLDialogElement>(null)
   const paletteResults = useQuery({ queryKey: ['palette', session.query], queryFn: async () => unwrap(await window.devcommand.library.search({ query: session.query, category: 'all', risk: 'all', platform: 'all', favoritesOnly: false })), enabled: paletteOpen })
-  useEffect(() => { if (paletteOpen) palette.current?.showModal(); else palette.current?.close() }, [paletteOpen])
   const route = location.pathname.slice(1) || 'commands'
   const exploring = route === 'commands' || route === 'my-commands'
   const gitTab = route === 'git-config' ? 'config' : route === 'git-remote' ? 'remotes' : new URLSearchParams(location.search).get('tab') ?? 'overview'
@@ -166,8 +166,8 @@ export function App() {
       {!settings.terminalVisible && <button className="dock-toggle" onClick={() => update.mutate({ terminalVisible: true })}><Terminal />Show terminal dock <kbd>⌘ J</kbd></button>}
       <footer className="statusbar"><span><span className="status-dot" />Command Center <span className="status-separator">/</span> v0.1.0</span><span><Monitor />Local environment<span className="status-separator">·</span>Sessions stay in memory</span></footer>
     </main>
-    <dialog ref={help} className="confirmation-dialog" aria-labelledby="shortcuts-title"><h2 id="shortcuts-title">Keyboard shortcuts</h2><div className="shortcut-row">Command palette<kbd>⌘ / Ctrl K</kbd></div><div className="shortcut-row">Repositories<kbd>⌘ / Ctrl P</kbd></div><div className="shortcut-row">Toggle terminal<kbd>⌘ / Ctrl J</kbd></div><div className="shortcut-row">Review command<kbd>⌘ / Ctrl Enter</kbd></div><div className="confirmation-actions"><Button onClick={() => help.current?.close()}>Close</Button></div></dialog>
-    <dialog ref={palette} className="command-palette" aria-labelledby="palette-title" onCancel={() => setPaletteOpen(false)}><h2 id="palette-title">Command palette</h2><input autoFocus aria-label="Search command palette" maxLength={200} value={session.query} placeholder="Search commands or aliases…" onChange={(event) => session.setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'ArrowDown') { event.preventDefault(); palette.current?.querySelector<HTMLButtonElement>('.palette-results button')?.focus() } }} /><div className="palette-results">{paletteResults.data?.map((entry) => <button key={entry.id} onClick={() => { session.select(entry.id); session.setQuery(''); setPaletteOpen(false); navigate(`/commands?focus=${encodeURIComponent(entry.id)}`) }} onKeyDown={(event) => { if (event.key === 'ArrowDown') { event.preventDefault(); (event.currentTarget.nextElementSibling as HTMLButtonElement | null)?.focus() } if (event.key === 'ArrowUp') { event.preventDefault(); (event.currentTarget.previousElementSibling as HTMLButtonElement | null)?.focus() } }}><span><strong>{entry.title}</strong><small>{entry.category} · {entry.risk}</small></span><ChevronRight /></button>)}{paletteResults.data?.length === 0 && <p>No matching commands.</p>}</div><Button variant="outline" onClick={() => setPaletteOpen(false)}>Close</Button></dialog>
+    <KeyboardShortcuts dialogRef={help} />
+    {paletteOpen && <CommandPalette query={session.query} entries={paletteResults.data ?? []} loading={paletteResults.isPending} failed={paletteResults.isError} onQueryChange={session.setQuery} onClose={() => setPaletteOpen(false)} onRetry={() => void paletteResults.refetch()} onSelect={(id) => { session.select(id); session.setQuery(''); setPaletteOpen(false); navigate(`/commands?focus=${encodeURIComponent(id)}`) }} />}
     {(notice || update.isError) && <div role="status" className="toast"><Info />{notice || 'Could not save preferences. Try again.'}<IconButton label="Dismiss notification" onClick={() => { setNotice(''); update.reset() }}><X /></IconButton></div>}
   </div>
 }

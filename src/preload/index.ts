@@ -35,6 +35,7 @@ const api: DevCommandAPI = {
     status: (id) => ipcRenderer.invoke('workspace:status', id)
   },
   library: {
+    chooseComparisonFile: (input) => ipcRenderer.invoke('library:choose-comparison-file', input),
     launch: (request, confirmationToken) => ipcRenderer.invoke('library:launch', { request, confirmationToken }),
     clearHistory: () => ipcRenderer.invoke('library:clear-history'),
     search: (request) => ipcRenderer.invoke('library:search', request),
@@ -59,6 +60,7 @@ const api: DevCommandAPI = {
   commands: {
     execute: (request) => ipcRenderer.invoke('commands:execute', request),
     listExecutions: () => ipcRenderer.invoke('commands:list'),
+    clearFinished: () => ipcRenderer.invoke('commands:clear-finished'),
     cancel: (id) => ipcRenderer.invoke('commands:cancel', id),
     onExecutionEvent: (handler) => subscribe<ExecutionEvent>('commands:event', handler)
   },

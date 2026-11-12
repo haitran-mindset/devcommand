@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { tmpdir } from 'node:os'
 import type { ExecutionEvent } from '../src/shared/runtime'
+import * as processTermination from '../src/main/infrastructure/process/terminate'
 import { ManagedRunner } from '../src/main/services/execution/runner'
 import { LineRedactor } from '../src/main/services/execution/redact'
 
@@ -82,4 +83,53 @@ it('honors backend-defined empty-result exit codes while retaining the actual co
     await waitUntil(() => !!runner.list().find((run) => run.id === failed)?.finishedAt)
     expect(runner.list().find((run) => run.id === failed)?.status).toBe('failed')
   } finally { await runner.closeAll() }
+})
+
+
+it('clears only ended jobs and keeps active or still-terminating processes', async () => {
+  const runner = new ManagedRunner(() => {})
+  try {
+    const succeeded = runner.execute(definition('process.exit(0)'))
+    const failed = runner.execute(definition('process.exit(2)'))
+    const active = runner.execute(definition('setInterval(()=>{},1000)'))
+    await waitUntil(() => [succeeded, failed].every((id) => !!runner.list().find((entry) => entry.id === id)?.finishedAt))
+    expect(runner.clearFinished()).toBe(2)
+    expect(runner.list().map((entry) => entry.id)).toEqual([active])
+    expect(runner.list()[0].status).toBe('running')
+    const closing = runner.cancel(active)
+    expect(runner.clearFinished()).toBe(0)
+    expect(runner.list().map((entry) => entry.id)).toEqual([active])
+    await closing
+    expect(runner.clearFinished()).toBe(1)
+    expect(runner.list()).toEqual([])
+    expect(runner.clearFinished()).toBe(0)
+  } finally { await runner.closeAll() }
+})
+
+
+it('retains a closed child while descendant termination is still pending', async () => {
+  const terminate = processTermination.terminateTree
+  let release!: () => void
+  const barrier = new Promise<void>((resolve) => { release = resolve })
+  const spy = vi.spyOn(processTermination, 'terminateTree').mockImplementation(async (...args) => { await terminate(...args); await barrier })
+  const runner = new ManagedRunner(() => {})
+  let cancellation: Promise<void> | undefined, closing: Promise<void> | undefined
+  try {
+    const id = runner.execute(definition('setInterval(()=>{},1000)'))
+    cancellation = runner.cancel(id)
+    await waitUntil(() => !!runner.list().find((entry) => entry.id === id)?.finishedAt)
+    expect(runner.clearFinished()).toBe(0)
+    expect(runner.list().map((entry) => entry.id)).toEqual([id])
+    let closed = false
+    closing = runner.closeAll().then(() => { closed = true })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(closed).toBe(false)
+    release()
+    await closing
+    expect(runner.list()).toEqual([])
+  } finally {
+    release()
+    await Promise.all([cancellation, closing, runner.closeAll()])
+    spy.mockRestore()
+  }
 })

@@ -37,6 +37,13 @@ try {
     await dialog.getByRole('button', { name: 'Close', exact: true }).click()
   }
   await page.getByRole('button', { name: 'Stage tracked.txt', exact: true }).click()
+  const stageConfirmation = page.getByRole('dialog')
+  await stageConfirmation.locator(':scope > pre').waitFor()
+  assert.equal(await stageConfirmation.locator(':scope > pre').innerText(), 'git add -- tracked.txt')
+  assert.equal(await stageConfirmation.locator('details').getAttribute('open'), null)
+  await stageConfirmation.getByText('Managed execution options', { exact: true }).click()
+  assert.match(await stageConfirmation.locator('details pre').innerText(), /--literal-pathspecs.*core.hooksPath=/)
+
   assert.equal(git(['diff', '--cached', '--name-only']), '')
   await confirm()
   assert.equal(git(['diff', '--cached', '--name-only']), 'tracked.txt')
