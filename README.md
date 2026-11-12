@@ -6,6 +6,7 @@ It combines a **GUI and terminal**, stores data locally in SQLite, and does not 
 
 ## Table of contents
 
+- [Downloads and releases](#downloads-and-releases)
 - [Requirements](#requirements)
 - [Development](#development)
 - [Building and installing on macOS](#building-and-installing-on-macos)
@@ -18,6 +19,49 @@ It combines a **GUI and terminal**, stores data locally in SQLite, and does not 
 - [Scripts and testing](#scripts-and-testing)
 - [Troubleshooting](#troubleshooting)
 - [Current limitations](#current-limitations)
+
+## Downloads and releases
+
+Tagged releases are built by [Release macOS](.github/workflows/release.yml). Download links become available after the first successful release:
+
+- [Latest release](https://github.com/haitran-mindset/devcommand/releases/latest)
+- [macOS Apple Silicon](https://github.com/haitran-mindset/devcommand/releases/latest/download/DevCommand-mac-arm64.dmg)
+- [macOS Intel](https://github.com/haitran-mindset/devcommand/releases/latest/download/DevCommand-mac-x64.dmg)
+
+Private repositories require GitHub access. Stable `latest` links exclude prereleases; download prerelease assets from their individual release page. Builds are unsigned and not notarized; see the installation instructions below.
+
+### Publishing a release
+
+Commit the release configuration to GitHub before tagging it. For the initial version, after committing and pushing the setup:
+
+```sh
+npm run test:release
+node scripts/check-release.mjs v0.1.0
+git tag -a v0.1.0 -m "DevCommand v0.1.0"
+git push origin v0.1.0
+```
+
+For subsequent versions, update both manifests, commit the changes, then push the matching tag:
+
+```sh
+npm version 0.1.1 --no-git-tag-version
+# Review, commit and push package.json and package-lock.json first.
+node scripts/check-release.mjs v0.1.1
+git tag -a v0.1.1 -m "DevCommand v0.1.1"
+git push origin v0.1.1
+```
+
+Tags must match `v` plus the package version, including the lockfile root versions. Prerelease versions such as `0.2.0-beta.1` are supported; build metadata is not. Each architecture runs checks and builds its own DMG. Both installers and `SHA256SUMS.txt` must be ready before the draft is published. The workflow refuses to replace an already published release. A failed draft can be retried from GitHub Actions.
+
+GitHub Actions must be enabled and organization policies must allow the listed actions, macOS runners, and `contents: write` for the publishing job. The built-in `GITHUB_TOKEN` publishes assets; no personal access token or SSH key is required. Native dependencies are built on the matching macOS architecture. Local build filenames remain versioned; release download aliases use stable architecture names.
+
+Download both installers and the checksum file into one directory to verify:
+
+```sh
+shasum -a 256 -c SHA256SUMS.txt
+```
+
+No automatic app update mechanism is included. Install a newer release manually. CI publishing still needs a successful tag-triggered run in your repository before download links are live.
 
 ## Requirements
 
@@ -634,7 +678,7 @@ Screenshots are written to `resources/screenshots/` and ignored by Git because t
 ## Current limitations
 
 - macOS ARM64 is the primary tested platform. Intel macOS, Windows, and Linux have not received equivalent validation.
-- Signing/notarization and public release distribution are not configured.
+- Signing and notarization are not configured. Tag-based release distribution is configured in GitHub Actions and requires a successful remote run.
 - CLI availability, OS permissions, shell setup, agents, and provider accounts affect actual behavior.
 - Tunnel/AI/network/agent tests use fixtures and do not prove compatibility with every live account or SSH server.
 - Managed Git does not provide force push, unmerged-branch deletion, rebase/cherry-pick, or a conflict editor.
