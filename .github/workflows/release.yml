@@ -104,7 +104,10 @@ jobs:
       - name: Publish complete release
         run: |
           set -euo pipefail
-          if gh api "repos/$GH_REPO/releases/tags/$TAG" > "$RUNNER_TEMP/release.json"; then
+          gh api --paginate --slurp "repos/$GH_REPO/releases?per_page=100" \
+            | jq --arg tag "$TAG" '[.[][] | select(.tag_name == $tag)] | first // empty' \
+            > "$RUNNER_TEMP/release.json"
+          if [ -s "$RUNNER_TEMP/release.json" ]; then
             test "$(jq -r .draft "$RUNNER_TEMP/release.json")" = true || {
               echo 'Refusing to overwrite a published release.' >&2
               exit 1
@@ -117,11 +120,12 @@ jobs:
           These builds are unsigned and not notarized. If macOS blocks opening, review the app in System Settings → Privacy & Security.
           Verify downloads with `shasum -a 256 -c SHA256SUMS.txt` after downloading both installers and the checksum file.
           NOTES
-            args=()
-            if [ "$PRERELEASE" = true ]; then args+=(--prerelease); fi
-            gh release create "$TAG" --verify-tag --draft --title "DevCommand $TAG" \
-              --generate-notes --notes-file "$RUNNER_TEMP/notes.md" "${args[@]}"
-            gh api "repos/$GH_REPO/releases/tags/$TAG" > "$RUNNER_TEMP/release.json"
+            jq -n --arg tag "$TAG" --rawfile body "$RUNNER_TEMP/notes.md" \
+              --argjson prerelease "$PRERELEASE" \
+              '{tag_name: $tag, name: ("DevCommand " + $tag), body: $body, draft: true, prerelease: $prerelease, generate_release_notes: true}' \
+              > "$RUNNER_TEMP/request.json"
+            gh api --method POST "repos/$GH_REPO/releases" --input "$RUNNER_TEMP/request.json" \
+              > "$RUNNER_TEMP/release.json"
           fi
           gh release upload "$TAG" release-assets/DevCommand-mac-arm64.dmg \
             release-assets/DevCommand-mac-x64.dmg release-assets/SHA256SUMS.txt --clobber
