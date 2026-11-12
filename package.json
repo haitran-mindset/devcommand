@@ -1,6 +1,6 @@
 {
   "name": "devcommand",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Local-first developer command center",
   "author": "DevCommand",
   "private": true,

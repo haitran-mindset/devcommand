@@ -62,7 +62,7 @@ jobs:
       - run: npm run test:release
       - run: npm test -- --testTimeout=30000
       - name: Build installer
-        run: npm run dist -- --mac --"$ARCH" --publish never
+        run: npm run dist -- --mac --"$ARCH" --publish never --config.artifactName='DevCommand-${version}-${arch}.${ext}'
       - name: Verify and prepare download
         run: |
           hdiutil verify "release/DevCommand-$VERSION-$ARCH.dmg"
