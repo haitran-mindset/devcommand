@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { version as appVersion } from '../../../package.json'
 import { Link as RouterLink, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { Check, CheckCircle2, ChevronDown, ChevronRight, CircleHelp, Database, Folder, FolderOpen, GitBranch, GitCommitHorizontal, House, Info, KeyRound, LayoutGrid, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radio, RefreshCw, Search, Settings, SquareTerminal, Sun, Terminal, X, Clock, Archive, type LucideIcon } from 'lucide-react'
 import { KeyboardShortcuts } from './components/KeyboardShortcuts'
@@ -164,7 +165,7 @@ export function App() {
         {exploring && <RunningTasks />}
       </div>
       {!settings.terminalVisible && <button className="dock-toggle" onClick={() => update.mutate({ terminalVisible: true })}><Terminal />Show terminal dock <kbd>⌘ J</kbd></button>}
-      <footer className="statusbar"><span><span className="status-dot" />Command Center <span className="status-separator">/</span> v0.1.0</span><span><Monitor />Local environment<span className="status-separator">·</span>Sessions stay in memory</span></footer>
+      <footer className="statusbar"><span><span className="status-dot" />Command Center <span className="status-separator">/</span> v{appVersion}</span><span><Monitor />Local environment<span className="status-separator">·</span>Sessions stay in memory</span></footer>
     </main>
     <KeyboardShortcuts dialogRef={help} />
     {paletteOpen && <CommandPalette query={session.query} entries={paletteResults.data ?? []} loading={paletteResults.isPending} failed={paletteResults.isError} onQueryChange={session.setQuery} onClose={() => setPaletteOpen(false)} onRetry={() => void paletteResults.refetch()} onSelect={(id) => { session.select(id); session.setQuery(''); setPaletteOpen(false); navigate(`/commands?focus=${encodeURIComponent(id)}`) }} />}
