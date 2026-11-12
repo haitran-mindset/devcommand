@@ -28,7 +28,7 @@ Tagged releases are built by [Release macOS](.github/workflows/release.yml). Dow
 - [macOS Apple Silicon](https://github.com/haitran-mindset/devcommand/releases/latest/download/DevCommand-mac-arm64.dmg)
 - [macOS Intel](https://github.com/haitran-mindset/devcommand/releases/latest/download/DevCommand-mac-x64.dmg)
 
-Private repositories require GitHub access. Stable `latest` links exclude prereleases; download prerelease assets from their individual release page. Builds are unsigned and not notarized; see the installation instructions below.
+Private repositories require GitHub access. Stable `latest` links exclude prereleases; download prerelease assets from their individual release page. Builds are ad-hoc signed, without an Apple Developer ID, and are not notarized; see the installation instructions below.
 
 ### Publishing a release
 
@@ -179,7 +179,7 @@ npm run dist -- --mac --x64
 
 The Intel build has not been verified on Intel hardware. Its native modules and artifacts need separate testing before distribution.
 
-The current configuration sets `mac.identity: null`: the app is **not Developer ID signed or notarized**. If macOS blocks a trusted local build, check **System Settings → Privacy & Security → Open Anyway**. You do not need to disable Gatekeeper system-wide.
+The current configuration sets `mac.identity: "-"`: the app is **ad-hoc signed**, but **not Developer ID signed or notarized**. CI verifies the complete app signature before publishing. Ad-hoc signing preserves bundle integrity but does not establish developer trust with Gatekeeper. If macOS blocks a trusted local build, check **System Settings → Privacy & Security → Open Anyway**. You do not need to disable Gatekeeper system-wide.
 
 ## Getting started
 
@@ -678,7 +678,7 @@ Screenshots are written to `resources/screenshots/` and ignored by Git because t
 ## Current limitations
 
 - macOS ARM64 is the primary tested platform. Intel macOS, Windows, and Linux have not received equivalent validation.
-- Signing and notarization are not configured. Tag-based release distribution is configured in GitHub Actions and requires a successful remote run.
+- Developer ID signing and notarization are not configured; builds use ad-hoc signing. Tag-based release distribution is configured in GitHub Actions and requires a successful remote run.
 - CLI availability, OS permissions, shell setup, agents, and provider accounts affect actual behavior.
 - Tunnel/AI/network/agent tests use fixtures and do not prove compatibility with every live account or SSH server.
 - Managed Git does not provide force push, unmerged-branch deletion, rebase/cherry-pick, or a conflict editor.

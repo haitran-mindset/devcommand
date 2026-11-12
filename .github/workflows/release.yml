@@ -63,6 +63,12 @@ jobs:
       - run: npm test -- --testTimeout=30000
       - name: Build installer
         run: npm run dist -- --mac --"$ARCH" --publish never --config.artifactName='DevCommand-${version}-${arch}.${ext}'
+      - name: Verify app signature
+        run: |
+          apps=(release/mac*/DevCommand.app)
+          test "${#apps[@]}" -eq 1
+          codesign --verify --deep --strict --verbose=2 "${apps[0]}"
+          codesign --display --verbose=2 "${apps[0]}"
       - name: Verify and prepare download
         run: |
           hdiutil verify "release/DevCommand-$VERSION-$ARCH.dmg"
@@ -117,7 +123,7 @@ jobs:
           Download **DevCommand-mac-arm64.dmg** for Apple Silicon or **DevCommand-mac-x64.dmg** for Intel.
           Open the DMG and drag DevCommand into Applications.
 
-          These builds are unsigned and not notarized. If macOS blocks opening, review the app in System Settings → Privacy & Security.
+          These builds are ad-hoc signed, without an Apple Developer ID, and are not notarized. If macOS blocks opening, review the app in System Settings → Privacy & Security.
           Verify downloads with `shasum -a 256 -c SHA256SUMS.txt` after downloading both installers and the checksum file.
           NOTES
             jq -n --arg tag "$TAG" --rawfile body "$RUNNER_TEMP/notes.md" \
