@@ -13,7 +13,7 @@ import { type Definition, displayCommand, expand, getDefinition, registry, valid
 import { ManagedRunner, type ProcessDefinition } from '../execution/runner'
 import { redact } from '../execution/redact'
 import type { SshAction, SshAgentLifetime } from '../../../shared/extended'
-import type { SshService } from '../ssh/service'
+import { keyGenerationArguments, type SshService } from '../ssh/service'
 import type { TerminalManager } from '../terminal/manager'
 import { fileOperation } from './files'
 import { permissionArguments, permissionTarget } from './permissions'
@@ -85,10 +85,25 @@ export class CommandService {
       const action = await this.sshAction(request)
       const preview = await this.ssh!.preview(action)
       const path = params.keyName ? join(this.ssh!.directory, params.keyName) : this.ssh!.directory
-      const argv = action.kind === 'key.generate' ? ['-t', 'ed25519', '-a', '64', '-C', action.comment, '-f', path] : action.kind === 'agent.add' ? (action.lifetimeSeconds === 'unlimited' ? [path] : ['-t', action.lifetimeSeconds ?? '3600', path]) : action.kind === 'agent.remove' ? ['-d', join(this.ssh!.directory, action.publicKeyName)] : ['-D']
+      const argv = action.kind === 'key.generate' ? keyGenerationArguments(action.keyType ?? 'ed25519', action.comment, path) : action.kind === 'agent.add' ? (action.lifetimeSeconds === 'unlimited' ? [path] : ['-t', action.lifetimeSeconds ?? '3600', path]) : action.kind === 'agent.remove' ? ['-d', join(this.ssh!.directory, action.publicKeyName)] : ['-D']
       return { definition, request, process: { commandId: definition.id, executable, argv, cwd: action.kind === 'agent.clear' ? homedir() : this.ssh!.directory, preview: preview.display }, preview: { display: preview.display, cwd: action.kind === 'agent.clear' ? homedir() : this.ssh!.directory, risk: definition.risk, consequences: preview.consequences }, binding: '', ssh: { action, token: preview.token, expiresAt: preview.expiresAt } }
     }
     let initialCommand: string | undefined
+    let agentKeyState: string | undefined
+    let agentDisplay: string | undefined
+    if (definition.id === 'ssh.agent.start') {
+      if (!findExecutable('ssh-agent')) throw new PublicError('ssh-agent is not installed or absent from the application PATH.')
+      if (!findExecutable('ssh-add')) throw new PublicError('ssh-add is not installed or absent from the application PATH.')
+      if (!this.ssh) throw new PublicError('SSH metadata is unavailable. Restart DevCommand.')
+      const key = (await this.ssh.snapshot()).keys.find((entry) => entry.name === params.keyName + '.pub')
+      if (!key?.privateAvailable) throw new PublicError('Choose an existing SSH key with a public .pub file and a private key with safe permissions.')
+      agentKeyState = key.fingerprint
+      const addCommand = displayCommand('ssh-add', [join(this.ssh.directory, params.keyName)])
+      agentDisplay = 'eval "$(ssh-agent -s)" && ' + addCommand
+      // Check ssh-agent's status before eval so startup failure cannot load a key into the inherited agent.
+      initialCommand = 'devcommand_agent_env="$(ssh-agent -s)" && eval "$devcommand_agent_env" && ' + addCommand
+    }
+    const sshDirectoryArgs = definition.id === 'ssh.key.list' ? ['-la', this.ssh?.directory ?? join(homedir(), '.ssh')] : undefined
     let sourceState: string | undefined
     let zshSyntaxArgs: string[] | undefined
     if (definition.id === 'zsh.syntax' || definition.id === 'zsh.source') {
@@ -164,19 +179,22 @@ export class CommandService {
     const portTarget = definition.id === 'system.port.stop' ? await inspectPortTarget(this.portProbe, params.port, params.pid) : undefined
     const findArgs = definition.id.startsWith('find.') ? expand(definition, params) : undefined
     if (findArgs && params.maxDepth !== 'all') findArgs.splice(2, 0, '-maxdepth', params.maxDepth)
-    const argv = findArgs ?? files?.argv ?? zshSyntaxArgs ?? sshFingerprintArgs ?? (permission ? permissionArguments(definition, params, permission.target) : portTarget ? ['-TERM', portTarget.pid] : definition.id === 'git.unstage' && repository?.unborn ? ['rm', '--cached', '--force', '--', params.path] : definition.id === 'git.unstage' && originalPath ? ['restore', '--staged', '--', params.path, originalPath] : expand(definition, params))
+    const argv = sshDirectoryArgs ?? findArgs ?? files?.argv ?? zshSyntaxArgs ?? sshFingerprintArgs ?? (permission ? permissionArguments(definition, params, permission.target) : portTarget ? ['-TERM', portTarget.pid] : definition.id === 'git.unstage' && repository?.unborn ? ['rm', '--cached', '--force', '--', params.path] : definition.id === 'git.unstage' && originalPath ? ['restore', '--staged', '--', params.path, originalPath] : expand(definition, params))
     const executionArgs = definition.executable === 'git' && definition.requiresRepository ? [...gitSafetyArgs, ...argv] : argv
     const safeParams = { ...params }
     for (const parameter of definition.parameters) if (parameter.sensitive) safeParams[parameter.key] = '[REDACTED]'
-    const safeArgs = findArgs || files || zshSyntaxArgs || sshFingerprintArgs || permission || portTarget ? argv : definition.executable === 'git' && definition.requiresRepository ? [...gitSafetyArgs, ...(definition.id === 'git.unstage' && (repository?.unborn || originalPath) ? argv : expand(definition, safeParams))] : expand(definition, safeParams)
-    const display = initialCommand ?? redact(displayCommand(definition.executable, safeArgs))
+    const safeArgs = sshDirectoryArgs || findArgs || files || zshSyntaxArgs || sshFingerprintArgs || permission || portTarget ? argv : definition.executable === 'git' && definition.requiresRepository ? [...gitSafetyArgs, ...(definition.id === 'git.unstage' && (repository?.unborn || originalPath) ? argv : expand(definition, safeParams))] : expand(definition, safeParams)
+    const display = agentDisplay ?? initialCommand ?? redact(displayCommand(definition.executable, safeArgs))
     const consequences: string[] = []
     if (definition.id.startsWith('compare.')) consequences.push('Read-only comparison. Relative file paths start at the selected workspace or home directory; absolute paths are also supported. Symbolic links resolve to their regular-file targets.', 'Exit 0 means equal under the selected comparison rules; exit 1 means different. Both are successful comparisons. Higher exit codes indicate an error. An equal result usually has no output.', 'Diff output may contain file contents and is saved in Execution History. Large comparisons are subject to the managed execution timeout and output limits.')
     if (files) consequences.push(...files.consequences, 'Paths are checked inside the selected repository at preview and run. Symbolic links and .git metadata are refused. No sudo or recursive operations are used.', 'Do not change the same paths in another tool while this operation runs. CLI filesystem operations are not atomically isolated from concurrent filesystem changes.')
     if (definition.id.startsWith('find.')) consequences.push('Reads names and metadata only; symbolic links inside the search directory are not followed. Results include hidden directories, limited by maximum depth when selected. The default / searches from the filesystem root without a depth limit; access follows your existing OS permissions.', 'An empty result is successful. Permission errors can produce partial results and a failed exit status. Large searches may hit the managed execution timeout; narrow the directory or depth.')
     if (permission) consequences.push(`Target: ${permission.target}. Current mode: ${permission.mode}; owner UID:GID: ${permission.owner}.`, definition.mutation ? 'Changes this path only, without recursion or automatic sudo. Access changes may affect your tools and collaborators.' : 'Reads permissions without changing this path.')
     else if (definition.category === 'SSH') {
-      if (definition.id === 'ssh.connect') consequences.push('Opens an interactive SSH connection using your OpenSSH configuration and OS agent. Enter any password or passphrase in the terminal.', 'Session input/output is not saved in Execution History. No remote command is submitted by DevCommand.')
+      if (definition.id === 'ssh.agent.start') consequences.push('Starts a new agent, then adds the selected key in the same terminal tab. Existing terminals and the app agent environment are unchanged.', 'Key loading runs only if agent startup succeeds. Enter any key passphrase in the terminal. No lifetime flag is set; the key remains until removed or the agent exits. Close this new agent with ssh-agent -k when finished.')
+      else if (definition.id === 'ssh.key.list') consequences.push('Lists SSH directory filenames and metadata only. Does not read private key contents, create keys or modify agent identities.')
+      else if (definition.id === 'ssh.github.test') consequences.push('Runs ssh -T git@github.com using your existing SSH configuration and agent. Does not start an agent or add keys.', 'OpenSSH may prompt to trust a new host or unlock a key. GitHub can return exit code 1 after successful authentication; read its message.')
+      else if (definition.id === 'ssh.connect') consequences.push('Opens an interactive SSH connection using your OpenSSH configuration and OS agent. Enter any password or passphrase in the terminal.', 'Session input/output is not saved in Execution History. No remote command is submitted by DevCommand.')
       else if (definition.id === 'ssh.test') consequences.push('Tests a direct hostname/IP, bypassing SSH config aliases, proxy and local commands. Unknown/changed host keys are refused; prompts are disabled.', 'Git providers may return a nonzero exit code after successful authentication. Read the diagnostic output instead of relying only on the exit code.')
       else if (definition.id.startsWith('ssh.agent.')) consequences.push('Reads the OS agent without loading, removing or changing identities. No identities (exit 1) is an empty result; an unreachable agent remains an error.')
     }
@@ -217,7 +235,7 @@ export class CommandService {
     if (definition.network && definition.category === 'Git') consequences.push('Connects to the configured remote using your local Git/SSH authentication. Network commands may take up to 60 seconds.')
     if (repository && !repository.clean && definition.mutation && !portTarget && !permission && !definition.interactive) consequences.push('This working tree contains local changes. Review and back up your work before continuing.')
     if (definition.executable === 'git' && definition.requiresRepository) consequences.push('Managed Git disables hooks, fsmonitor, external/file transports and interactive paging.')
-    return { definition, request, initialCommand, process: { commandId: definition.id, executable, argv: executionArgs, cwd, preview: display, timeoutMs: definition.network || definition.id.startsWith('find.') ? 60000 : 10000, successExitCodes: definition.successExitCodes, secrets: definition.parameters.filter((parameter) => parameter.sensitive).map((parameter) => params[parameter.key]) }, preview: { display, cwd, risk: definition.risk, consequences, repository }, binding: digest(JSON.stringify([definition.id, params, request.workspaceId ?? null, executable, portTarget, permission?.state, sourceState, files?.state])) }
+    return { definition, request, initialCommand, process: { commandId: definition.id, executable, argv: executionArgs, cwd, preview: display, timeoutMs: definition.network || definition.id.startsWith('find.') ? 60000 : 10000, successExitCodes: definition.successExitCodes, secrets: definition.parameters.filter((parameter) => parameter.sensitive).map((parameter) => params[parameter.key]) }, preview: { display, cwd, risk: definition.risk, consequences, repository }, binding: digest(JSON.stringify([definition.id, params, request.workspaceId ?? null, executable, portTarget, permission?.state, sourceState, files?.state, agentKeyState])) }
   }
   private async state(request: CommandRequest): Promise<string> {
     const definition = getDefinition(request.commandId)
@@ -300,7 +318,7 @@ export class CommandService {
     const request = commandRequestSchema.parse(input)
     const params = validateParams(getDefinition(request.commandId), request.params)
     if (!this.ssh) throw new PublicError('SSH metadata is unavailable. Restart DevCommand.')
-    if (request.commandId === 'ssh.key.generate') return { kind: 'key.generate', name: params.keyName, comment: params.comment }
+    if (request.commandId === 'ssh.key.generate') return { kind: 'key.generate', name: params.keyName, comment: params.comment, ...(params.keyType === 'rsa' ? { keyType: 'rsa' as const } : {}) }
     if (request.commandId === 'ssh.agent.clear') return { kind: 'agent.clear' }
     if (!['ssh.agent.add', 'ssh.agent.remove'].includes(request.commandId)) throw new PublicError('Unsupported SSH key action.')
     const snapshot = await this.ssh.snapshot()
@@ -321,7 +339,7 @@ export class CommandService {
     if (!prepared.definition.interactive) throw new PublicError('This command is not an interactive CLI session.')
     if (!confirmation || confirmation.expires <= this.now() || confirmation.binding !== prepared.binding) throw new PublicError('Confirmation is missing, expired or does not match this session. Preview again.')
     if (confirmation.state !== await this.state(prepared.request)) throw new PublicError('The project changed after preview. Review the session again.')
-    return terminals.startProgram({ executable: prepared.process.executable, argv: prepared.process.argv, cwd: prepared.process.cwd, label: prepared.definition.title, ...(prepared.initialCommand ? { initialCommand: prepared.initialCommand } : {}), keepShell: !prepared.definition.id.startsWith('zsh.') })
+    return terminals.startProgram({ executable: prepared.process.executable, argv: prepared.process.argv, cwd: prepared.process.cwd, label: prepared.definition.title, ...(prepared.initialCommand ? { initialCommand: prepared.initialCommand } : {}), keepShell: !prepared.definition.id.startsWith('zsh.') && prepared.definition.id !== 'ssh.agent.start' })
   }
   private readonly clearedHistory = new Set<string>()
   clearHistory() {

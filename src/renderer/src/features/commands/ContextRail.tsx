@@ -1,3 +1,4 @@
+import { conciseCommandDisplay } from '../../../../shared/text'
 import { copyText } from '../../lib/clipboard'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -41,7 +42,7 @@ export function ContextRail() {
     <section className="panel context-card"><h2><SlidersHorizontal />Quick Actions</h2><div className="quick-actions">{actions.map(({ id: commandId, title, icon: Icon, params }) => <button key={commandId} disabled={!id || !repository.data} title={`Configure ${title}`} onClick={() => open({ commandId, params, workspaceId: id! })}><Icon /><span>{title}</span></button>)}</div></section>
     <section className="panel context-card recent-card"><h2><Clock3 />Recent Commands<button onClick={() => navigate('/history')}>View all</button></h2>
       {history.isPending && <p>Loading recent activity…</p>}{history.isError && <p role="alert">Unable to load saved history.</p>}{recent?.length === 0 && <p className="rail-empty-copy">Your recent managed commands will appear here.</p>}
-      {recent?.map(({ request, execution }) => <button className="recent-command" key={execution.id} onClick={() => open(request)} title={`Review ${execution.preview}`}><span className={`activity-icon status-${execution.status}`}>{execution.status === 'succeeded' ? <CheckCircle2 /> : execution.status === 'running' ? <Clock3 /> : <CircleAlert />}</span><span><strong>{request.commandId.replaceAll('.', ' ')}</strong><small>{execution.status}</small></span><Clock3 /></button>)}
+      {recent?.map(({ request, execution }) => <button className="recent-command" key={execution.id} onClick={() => open(request)} title={`Review ${conciseCommandDisplay(execution.preview)}`}><span className={`activity-icon status-${execution.status}`}>{execution.status === 'succeeded' ? <CheckCircle2 /> : execution.status === 'running' ? <Clock3 /> : <CircleAlert />}</span><span><strong>{request.commandId.replaceAll('.', ' ')}</strong><small>{execution.status}</small></span><Clock3 /></button>)}
     </section>
   </aside>
 }

@@ -1,7 +1,7 @@
 import { readdirSync, lstatSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir, userInfo } from 'node:os'
-import { sshAgentLifetimeLabels, sshActionSchema, type SshAction, type SshHost, type SshKey, type SshPreview, type SshResult, type SshSnapshot } from '../../../shared/extended'
+import { sshAgentLifetimeLabels, sshActionSchema, type SshAction, type SshKeyType, type SshHost, type SshKey, type SshPreview, type SshResult, type SshSnapshot } from '../../../shared/extended'
 import { Confirmations, hash } from '../../security/confirmations'
 import { PublicError } from '../../security/errors'
 import { findExecutable, type ProbeRun } from '../cli/probe'
@@ -15,6 +15,9 @@ import type { ManagedRunner } from '../execution/runner'
 const publicName = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\.pub$/
 const reserved = new Set(['config', 'authorized_keys', 'known_hosts', 'known_hosts2'])
 interface Prepared { action: SshAction; state: string; display: string; consequences: string[]; argv?: string[]; executable?: string; nextText?: string; revision: string }
+export function keyGenerationArguments(keyType: SshKeyType, comment: string, path: string): string[] {
+  return ['-t', keyType, ...(keyType === 'rsa' ? ['-b', '4096'] : []), '-a', '64', '-C', comment, '-f', path]
+}
 export class SshService {
   private confirmations = new Confirmations()
   private generating = new Set<string>()
@@ -97,10 +100,10 @@ export class SshService {
       const path = join(this.directory, action.name)
       if (metadata(path) !== 'missing' || metadata(path + '.pub') !== 'missing') throw new PublicError('A file with this key name already exists. Existing keys are never overwritten automatically.')
       executable = findExecutable('ssh-keygen'); if (!executable) throw new PublicError('Install OpenSSH ssh-keygen and refresh.')
-      argv = ['-t', 'ed25519', '-a', '64', '-C', action.comment, '-f', path]
+      argv = keyGenerationArguments(action.keyType ?? 'ed25519', action.comment, path)
       display = displayCommand('ssh-keygen', argv)
       targetState = [metadata(path), metadata(path + '.pub')].join('|')
-      consequences.push('Creates a new ed25519 key pair in your OS SSH directory. Existing keys will not be replaced automatically.', 'The terminal will ask for a passphrase interactively. DevCommand never places it in argv, logs or its database.')
+      consequences.push(`Creates a new ${action.keyType === 'rsa' ? 'RSA 4096-bit' : 'ed25519'} key pair in your OS SSH directory. Existing keys will not be replaced automatically.`, 'The terminal will ask for a passphrase interactively. DevCommand never places it in argv, logs or its database.')
     } else if (action.kind === 'agent.add') {
       const key = await this.key(action.publicKeyName)
       if (key.fingerprint !== action.fingerprint || !key.privateAvailable) throw new PublicError('The key changed, its private pair is missing/symlinked, or its permissions are unsafe. Refresh and check it before loading.')

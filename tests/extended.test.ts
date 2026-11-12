@@ -71,6 +71,20 @@ describe('SSH confirmed actions', () => {
     await expect(service.preview(action)).rejects.toThrow('exists')
     expect(existsSync(join(dir, 'id_new'))).toBe(false)
   })
+  it('generates RSA 4096-bit argv only after confirmation and binds the selected type', async () => {
+    const dir = directory(), service = new SshService(probe, dir), f = execution()
+    const action = { kind: 'key.generate' as const, keyType: 'rsa' as const, name: 'id_rsa_new', comment: 'fixture RSA' }
+    const preview = await service.preview(action)
+    expect(preview.display).toContain('ssh-keygen -t rsa -b 4096 -a 64')
+    expect(preview.consequences.join(' ')).toContain('RSA 4096-bit')
+    await expect(service.execute({ ...action, keyType: 'ed25519' }, preview.token, f.terminals, f.runner)).rejects.toThrow()
+    expect(f.startProgram).not.toHaveBeenCalled()
+    const fresh = await service.preview(action)
+    await service.execute(action, fresh.token, f.terminals, f.runner)
+    expect(f.startProgram).toHaveBeenCalledWith(expect.objectContaining({ argv: ['-t', 'rsa', '-b', '4096', '-a', '64', '-C', 'fixture RSA', '-f', join(dir, 'id_rsa_new')] }))
+    expect(existsSync(join(dir, 'id_rsa_new'))).toBe(false)
+    await expect(service.preview({ ...action, keyType: 'dsa' } as unknown as typeof action)).rejects.toThrow()
+  })
   it('keeps private content out of snapshots and validates public fingerprints and agent requests', async () => {
     const dir = directory(); writeFileSync(join(dir, 'id_one'), 'PRIVATE SECRET SENTINEL', { mode: 0o600 }); writeFileSync(join(dir, 'id_one.pub'), 'ssh-ed25519 AAAAFixture public comment\n')
     const service = new SshService(probe, dir), snapshot = await service.snapshot()

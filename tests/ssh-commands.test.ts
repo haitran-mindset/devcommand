@@ -29,10 +29,44 @@ function fixture() {
   return { service, terminals, startProgram, sshExecute, sshPreview, publicKey, status, previewToken }
 }
 describe('SSH command library', () => {
-  it('groups eleven actions into SSH, SSH Keys and SSH Agent', () => {
+  it('groups fourteen actions into SSH, SSH Keys and SSH Agent', () => {
     const entries = registry.filter((entry) => entry.category === 'SSH').map((entry) => ({ ...entry, favorite: false }))
-    expect(entries).toHaveLength(11)
-    expect(groupCommands(entries).map((group) => [group.title, group.commands.length])).toEqual([['SSH', 4], ['SSH Keys', 2], ['SSH Agent', 5]])
+    expect(entries).toHaveLength(14)
+    expect(groupCommands(entries).map((group) => [group.title, group.commands.length])).toEqual([['SSH', 5], ['SSH Keys', 3], ['SSH Agent', 6]])
+  })
+  it('keeps key listing, agent startup and GitHub authentication independent', async () => {
+    const f = fixture()
+    const listing = await f.service.prepare({ commandId: 'ssh.key.list', params: {} })
+    expect(listing.process.executable).toBe('/usr/bin/ls')
+    expect(listing.process.argv).toEqual(['-la', '/fixture/.ssh'])
+    expect(listing.definition.mutation).toBe(false)
+    const github = await f.service.prepare({ commandId: 'ssh.github.test', params: {} })
+    expect(github.process.argv).toEqual(['-T', 'git@github.com'])
+    expect(github.definition.interactive).toBe(true)
+    const request = { commandId: 'ssh.agent.start', params: { keyName: 'id_work' } }
+    const preview = await f.service.preview(request)
+    expect(preview.display).toBe('eval "$(ssh-agent -s)" && ssh-add /fixture/.ssh/id_work')
+    expect(preview.consequences.join(' ')).toContain('then adds the selected key')
+    await expect(f.service.launch(request, randomUUID(), f.terminals)).rejects.toThrow('Confirmation')
+    await f.service.launch(request, preview.confirmationToken!, f.terminals)
+    expect(f.startProgram).toHaveBeenCalledWith(expect.objectContaining({
+      executable: '/usr/bin/zsh', argv: ['-f', '-i'], initialCommand: 'devcommand_agent_env="$(ssh-agent -s)" && eval "$devcommand_agent_env" && ssh-add /fixture/.ssh/id_work', keepShell: false
+    }))
+    expect(f.sshExecute).not.toHaveBeenCalled()
+    expect(f.status).not.toHaveBeenCalled()
+  })
+  it('refuses unavailable keys and never loads the inherited agent when startup fails', async () => {
+    const f = fixture()
+    await expect(f.service.prepare({ commandId: 'ssh.agent.start', params: { keyName: 'missing' } })).rejects.toThrow('existing SSH key')
+    const prepared = await f.service.prepare({ commandId: 'ssh.agent.start', params: { keyName: 'id_work' } })
+    const { spawnSync } = await import('node:child_process')
+    // Shell functions replace both SSH executables: no agent or real key is touched.
+    const failed = spawnSync('/bin/bash', ['-c', 'ssh-agent() { return 42; }; ssh-add() { printf "UNEXPECTED_ADD"; }; ' + prepared.initialCommand], { encoding: 'utf8' })
+    expect(failed.status).toBe(42)
+    expect(failed.stdout).not.toContain('UNEXPECTED_ADD')
+    const success = spawnSync('/bin/bash', ['-c', 'ssh-agent() { printf "export SSH_AUTH_SOCK=/fixture/new-agent;"; }; ssh-add() { printf "%s %s" "$SSH_AUTH_SOCK" "$1"; }; ' + prepared.initialCommand], { encoding: 'utf8' })
+    expect(success.status).toBe(0)
+    expect(success.stdout).toBe('/fixture/new-agent /fixture/.ssh/id_work')
   })
   it('validates hosts, users, key names and ports without accepting options or shell commands', () => {
     for (const host of ['-oProxyCommand=evil', 'user@host', 'host;id', 'host name', 'host\n']) expect(() => validateParams(getDefinition('ssh.connect'), { host, user: 'git', port: '22' })).toThrow()
@@ -73,6 +107,24 @@ describe('SSH command library', () => {
     await f.service.launch(load, f.previewToken, f.terminals)
     expect(f.sshExecute).toHaveBeenCalledWith({ kind: 'agent.add', publicKeyName: 'id_work.pub', fingerprint: 'SHA256:fixture', lifetimeSeconds: '3600' }, f.previewToken, f.terminals, expect.anything())
     expect(f.startProgram).not.toHaveBeenCalled()
+  })
+  it('passes the selected RSA type through library preview and terminal launch', async () => {
+    const f = fixture()
+    const request = { commandId: 'ssh.key.generate', params: { keyType: 'rsa', keyName: 'id_rsa_new', comment: 'fixture' } }
+    const prepared = await f.service.prepare(request)
+    expect(prepared.process.argv).toEqual(['-t', 'rsa', '-b', '4096', '-a', '64', '-C', 'fixture', '-f', '/fixture/.ssh/id_rsa_new'])
+    await f.service.launch(request, f.previewToken, f.terminals)
+    expect(f.sshExecute).toHaveBeenCalledWith({ kind: 'key.generate', keyType: 'rsa', name: 'id_rsa_new', comment: 'fixture' }, f.previewToken, f.terminals, expect.anything())
+  })
+  it('offers an editable private key name and independent lifetime for loading', () => {
+    const definition = getDefinition('ssh.agent.add')
+    expect(definition.parameters.find((field) => field.key === 'keyName')).toMatchObject({
+      label: 'Private key name (inside ~/.ssh)', type: 'string', defaultValue: 'id_ed25519'
+    })
+    expect(validateParams(definition, { keyName: 'id_work', lifetimeSeconds: 'unlimited' })).toEqual({
+      keyName: 'id_work', lifetimeSeconds: 'unlimited'
+    })
+    expect(getDefinition('ssh.agent.start').parameters[0]).toMatchObject({ key: 'keyName', defaultValue: 'id_ed25519' })
   })
   it('omits the lifetime flag for unlimited agent loading in copy and insert argv', async () => {
     const f = fixture()

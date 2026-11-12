@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { DockerAction, SshAction, SshPreview } from '../../../../shared/extended'
 import { Button } from '../../components/ui/button'
+import { conciseCommandDisplay } from '../../../../shared/text'
 import { unwrap, useUpdateSettings } from '../../lib/settings'
 import { useSession } from '../../lib/session'
 
@@ -29,7 +30,7 @@ export function ExtendedAction({ action, module, onClose }: { action: SshAction 
   return <dialog ref={dialog} className="confirmation-dialog git-action-dialog" aria-labelledby="extended-action-title" onCancel={(event) => { if (busy) event.preventDefault(); else onClose() }}>
     <h2 id="extended-action-title">Review {action.kind}</h2>
     {preview.isPending && <p>Validating target and current state…</p>}{preview.isError && <p role="alert">{preview.error.message}</p>}
-    {preview.data && <>{preview.data.consequences.map((text) => <p key={text}>{text}</p>)}<pre>{preview.data.display}</pre></>}
+    {preview.data && <>{preview.data.consequences.map((text) => <p key={text}>{text}</p>)}<pre>{conciseCommandDisplay(preview.data.display)}</pre>{conciseCommandDisplay(preview.data.display) !== preview.data.display && <details className="execution-options"><summary>Managed execution options</summary><pre>{preview.data.display}</pre></details>}</>}
     {error && <p role="alert" className="terminal-error">{error}</p>}{done && <p role="status">{done}</p>}
     {execution && <section aria-label="Operation result"><p role="status">{execution.status} · Exit code: {execution.exitCode ?? '—'}</p><pre className="execution-output" data-status={execution.status}>{execution.output.map((chunk) => <span key={chunk.sequence} className={chunk.stream === 'stderr' ? 'output-stderr' : undefined}>{chunk.data}</span>)}{execution.error && <span className="output-error">{execution.error}</span>}</pre>{execution.truncated && <p>Output is limited.</p>}</section>}
     {executions.isError && executionId && <p role="alert">Unable to refresh execution output.</p>}

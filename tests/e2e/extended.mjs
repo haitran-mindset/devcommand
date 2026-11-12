@@ -172,7 +172,7 @@ try {
   await chooseSelect(page, 'Command category', 'SSH')
   await page.waitForFunction(() => document.querySelectorAll('.command-row').length === 3)
   await page.getByRole('button', { name: 'SSH Keys', exact: true }).click()
-  await chooseSelect(page, 'Action', 'Generate ed25519 key')
+  await chooseSelect(page, 'Action', 'Generate key')
   await page.getByLabel('Key Basename', { exact: true }).fill('id_cli_fixture')
   await page.getByLabel('Public Comment', { exact: true }).fill('CLI fixture')
   await page.getByRole('button', { name: 'Run Command', exact: true }).click()
