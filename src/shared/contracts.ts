@@ -2,10 +2,11 @@ import { z } from 'zod'
 import type { GitAPI } from './git'
 import type { WorkspaceAPI } from './commands'
 import type { RuntimeAPI } from './runtime'
+import type { ProjectScriptsAPI } from './project-scripts'
 import type { SavedCommandsAPI } from './saved-commands'
 import type { ExtendedAPI } from './extended'
 
-export const routes = ['dashboard', 'git', 'commands', 'saved-commands', 'git-config', 'git-remote', 'ssh', 'docker', 'shell', 'my-commands', 'history', 'workspaces', 'settings'] as const
+export const routes = ['dashboard', 'git', 'commands', 'saved-commands', 'project-scripts', 'git-config', 'git-remote', 'ssh', 'docker', 'shell', 'my-commands', 'history', 'workspaces', 'settings'] as const
 export const settingsSchema = z.object({
   theme: z.enum(['dark', 'light', 'system']),
   route: z.enum(routes),
@@ -24,7 +25,8 @@ export const defaultSettings: AppSettings = {
 export const windowActionSchema = z.enum(['minimize', 'maximize', 'close'])
 export type WindowAction = z.infer<typeof windowActionSchema>
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string }
-export interface DevCommandAPI extends RuntimeAPI, WorkspaceAPI, GitAPI, ExtendedAPI, SavedCommandsAPI {
+export interface DevCommandAPI extends ProjectScriptsAPI, RuntimeAPI, WorkspaceAPI, GitAPI, ExtendedAPI, SavedCommandsAPI {
+  tray: { takeQuickTerminal(): Promise<ApiResult<boolean>>; onQuickTerminal(handler: () => void): () => void }
   clipboard: { writeText(text: string): Promise<ApiResult<null>> }
   settings: {
     get(): Promise<ApiResult<AppSettings>>

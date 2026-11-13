@@ -1,5 +1,7 @@
+import { ProjectScriptsService } from '../services/project-scripts/service'
+import { projectScriptsListSchema, projectScriptRequestSchema } from '../../shared/project-scripts'
 import { SavedCommandService } from '../services/saved-commands/service'
-import { savedCommandSaveSchema, savedCommandReferenceSchema, savedCommandTagUpdateSchema, savedCommandMoveSchema, savedCommandsClearSchema, savedCommandRunSchema } from '../../shared/saved-commands'
+import { savedCommandSaveSchema, savedCommandReferenceSchema, savedCommandTagUpdateSchema, savedCommandMoveSchema, savedCommandsClearSchema, savedCommandTagRenameSchema, savedCommandRunSchema } from '../../shared/saved-commands'
 import { existsSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { conciseCommandDisplay, hasControlCharacters } from '../../shared/text'
@@ -29,12 +31,17 @@ export function registerRuntime(handle: IpcHandle, window: BrowserWindow, store:
   }
   const terminals = new TerminalManager((event) => send('terminal:data', event), (event) => send('terminal:exit', event))
   const workspace = new WorkspaceService(store)
+  const projectScripts = new ProjectScriptsService(workspace, terminals)
+  handle('project-scripts:list', payload => projectScripts.list(projectScriptsListSchema.parse(payload)))
+  handle('project-scripts:preview', payload => projectScripts.preview(projectScriptRequestSchema.parse(payload)))
+  handle('project-scripts:run', payload => { const { token, ...request } = projectScriptRequestSchema.extend({ token: z.uuid() }).strict().parse(payload); return projectScripts.run(request, token) })
   const saved = new SavedCommandService(store, workspace, terminals)
   handle('saved-commands:list', (payload) => { if (payload !== undefined) throw new PublicError('Unexpected payload.'); return store.listSavedCommands() })
   handle('saved-commands:save', (payload) => store.saveSavedCommand(savedCommandSaveSchema.parse(payload)))
   handle('saved-commands:remove', (payload) => { store.removeSavedCommand(savedCommandReferenceSchema.parse(payload)); return null })
   handle('saved-commands:clear', (payload) => { store.clearSavedCommands(savedCommandsClearSchema.parse(payload)); return null })
   handle('saved-commands:tag', (payload) => { store.tagSavedCommands(savedCommandTagUpdateSchema.parse(payload)); return null })
+  handle('saved-commands:rename-tag', (payload) => store.renameSavedCommandTag(savedCommandTagRenameSchema.parse(payload)))
   handle('saved-commands:move', (payload) => { store.moveSavedCommand(savedCommandMoveSchema.parse(payload)); return null })
   handle('saved-commands:preview', (payload) => saved.preview(savedCommandRunSchema.parse(payload)))
   handle('saved-commands:run', (payload) => { const { token, ...request } = savedCommandRunSchema.extend({ token: z.uuid() }).strict().parse(payload); return saved.run(request, token) })
@@ -120,6 +127,7 @@ export function registerRuntime(handle: IpcHandle, window: BrowserWindow, store:
   handle('commands:cancel', async (payload) => { await runner.cancel(idSchema.parse(payload)); return null })
   let pending = Promise.resolve()
   const reset = () => {
+    projectScripts.clear()
     saved.clear()
     commands.clearConfirmations()
     ssh.clear()

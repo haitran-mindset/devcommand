@@ -7,12 +7,19 @@ function subscribe<T>(channel: string, handler: (event: T) => void): () => void 
   return () => ipcRenderer.removeListener(channel, listener)
 }
 const api: DevCommandAPI = {
+  tray: { takeQuickTerminal: () => ipcRenderer.invoke('tray:take-quick-terminal'), onQuickTerminal: handler => subscribe('tray:quick-terminal', handler) },
+  projectScripts: {
+    list: input => ipcRenderer.invoke('project-scripts:list', input),
+    preview: input => ipcRenderer.invoke('project-scripts:preview', input),
+    run: input => ipcRenderer.invoke('project-scripts:run', input),
+  },
   savedCommands: {
     list: () => ipcRenderer.invoke('saved-commands:list'),
     save: (input) => ipcRenderer.invoke('saved-commands:save', input),
     remove: (input) => ipcRenderer.invoke('saved-commands:remove', input),
     clear: (input) => ipcRenderer.invoke('saved-commands:clear', input),
     tag: (input) => ipcRenderer.invoke('saved-commands:tag', input),
+    renameTag: (input) => ipcRenderer.invoke('saved-commands:rename-tag', input),
     move: (input) => ipcRenderer.invoke('saved-commands:move', input),
     preview: (input) => ipcRenderer.invoke('saved-commands:preview', input),
     run: (input) => ipcRenderer.invoke('saved-commands:run', input)

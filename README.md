@@ -194,6 +194,28 @@ Commands that do not require a repository can run from your home directory when 
 
 ## Features
 
+### Menu Bar Companion / Tray
+
+- DevCommand adds a terminal icon to the macOS menu bar (system tray on other desktop platforms).
+- **Open DevCommand** shows and focuses the existing window. Closing the window hides it and leaves the companion and running sessions available; use **Quit** to exit and stop sessions.
+- **Quick Terminal** opens a new interactive terminal tab with the default shell in the home directory. It does not insert or run a command, or replace your existing tabs.
+- The tray does not start DevCommand at login.
+
+### Project Scripts
+
+- Open **Project Scripts** in the sidebar to discover scripts from the selected repository’s root `package.json`, direct targets from GNUmakefile/makefile/Makefile, and regular `.sh` files at the root or directly inside `scripts/`.
+- Detects npm, pnpm, yarn, or bun from `packageManager` or lockfiles. The selected CLI must already be installed.
+- Only discovered source files appear in the source filter. Search, filter by source, copy commands, or review and run them in a new terminal tab at the repository root. The shell remains open afterward.
+- Discovery only reads files; it does not execute project code. Makefile includes, variables, patterns, and generated targets are not expanded. Nested packages and nested script directories are not scanned. Shell scripts use sh/bash/zsh from their shebang (or sh when absent); unsupported interpreters/options are skipped with a warning.
+- Running scripts may execute lifecycle hooks and additional recipes. A changed manifest/Makefile requires a refreshed preview.
+
+### Notification Center
+
+- Open the bell in the top bar to review managed-command results, app notices, errors, and warnings.
+- An unread badge, mark-all-read, individual dismissal, and Clear help manage the list.
+- Keeps the latest 100 notifications in memory for the current app session; it does not persist terminal output or inspect commands typed directly in the terminal.
+- Success and failure follow execution status, not whether a command writes to stderr.
+
 ### Dashboard
 
 - Current repository, branch, and working-tree status.
@@ -242,6 +264,8 @@ Open **Saved Commands** in the sidebar to maintain your personal shell-command l
 - **Delete all** removes every saved command across all tags and filters after confirmation. It preserves repositories, Favorites, settings, and running terminal sessions; if the list changes during confirmation, review deletion again.
 - Save multiline commands exactly as entered; copy the full text with the Copy icon.
 - Drag a command by its grip to reorder it, or focus the grip and use **Alt+↑/↓**. Order persists across restarts, works while filtering, and stays unchanged when editing or tagging. New commands appear at the top.
+- The New/Edit form suggests existing tags as you type. Click a suggestion or focus it and press Enter; you can still enter new comma-separated tags.
+- Use the pencil beside a tag filter to rename that tag across the library. Renaming to an existing tag merges them without duplicates and preserves command order and content.
 - Assign multiple tags to a command. Select several commands, enter a tag, and choose **Add tag** or **Remove tag** to organize them together.
 - Search titles, command text, descriptions, and tags, or filter by a tag or **Untagged**.
 - Choose **Run**, review the complete command and target directory, then **Confirm & Run**. The default target is the live working directory of your active terminal, including changes made with `cd`. Without a running active terminal, it defaults to Home; you can also select an existing repository. The app rechecks the directory at confirmation and opens a new tab there.

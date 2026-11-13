@@ -113,6 +113,36 @@ describe('saved command persistence', () => {
       expect(ids()).toEqual([e.id, a.id, b.id, d.id])
     } finally { store.close() }
   })
+  it('renames tags globally, merges duplicates and preserves commands and manual ordering across reopen', () => {
+    const root = mkdtempSync(join(tmpdir(), 'devcommand-tag-rename-'))
+    cleanups.push(() => rmSync(root, { recursive: true, force: true }))
+    const path = join(root, 'settings.sqlite')
+    let store = openSettingsStore(path)
+    try {
+      const a = store.saveSavedCommand({ ...fields, tags: ['old', 'deploy', 'node'] })
+      const b = store.saveSavedCommand({ ...fields, title: 'B', tags: ['old'] })
+      const c = store.saveSavedCommand({ ...fields, title: 'C', tags: ['other'] })
+      store.moveSavedCommand({ sourceId: a.id, targetId: c.id, placement: 'before' })
+      const order = store.listSavedCommands().map(entry => entry.id)
+      expect(store.renameSavedCommandTag({ from: ' OLD ', to: ' Deploy ' })).toBe(2)
+      const after = store.listSavedCommands()
+      expect(after.map(entry => entry.id)).toEqual(order)
+      expect(after.find(entry => entry.id === a.id)?.tags).toEqual(['deploy', 'node'])
+      expect(after.find(entry => entry.id === b.id)?.tags).toEqual(['deploy'])
+      expect(after.find(entry => entry.id === c.id)).toEqual(c)
+      expect(after.every(entry => entry.command === fields.command)).toBe(true)
+      expect(() => store.requireSavedCommand(a.id, a.revision)).toThrow('changed')
+      store.close(); store = openSettingsStore(path)
+      expect(store.listSavedCommands()).toEqual(after)
+      expect(store.renameSavedCommandTag({ from: 'deploy', to: 'deploy' })).toBe(0)
+    } finally { store.close() }
+  })
+  it('rejects missing or invalid rename targets without changing any tags', () => {
+    const f = fixture(), entry = f.store.saveSavedCommand(fields)
+    expect(() => f.store.renameSavedCommandTag({ from: 'missing', to: 'new' })).toThrow('no longer exists')
+    for (const to of ['', 'bad,tag', 'x'.repeat(41), 'bad\u0000tag']) expect(() => f.store.renameSavedCommandTag({ from: 'node', to })).toThrow()
+    expect(f.store.listSavedCommands()).toEqual([entry])
+  })
   it('clears only saved commands and ordering, preserving preferences, repositories and Favorites', () => {
     const f = fixture()
     f.store.update({ theme: 'light' }); f.store.favoriteCommand('git.status', true)

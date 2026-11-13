@@ -24,6 +24,8 @@ export function savedCommandTitle(entry: Pick<SavedCommand, 'title' | 'command'>
 }
 export const savedCommandTagUpdateSchema = z.object({ ids: z.array(z.uuid()).min(1).max(1000).refine(ids => new Set(ids).size === ids.length), tag: savedCommandTagSchema, operation: z.enum(['add', 'remove']) }).strict()
 export type SavedCommandTagUpdate = z.infer<typeof savedCommandTagUpdateSchema>
+export const savedCommandTagRenameSchema = z.object({ from: savedCommandTagSchema, to: savedCommandTagSchema }).strict()
+export type SavedCommandTagRename = z.infer<typeof savedCommandTagRenameSchema>
 export const savedCommandMoveSchema = z.object({ sourceId: z.uuid(), targetId: z.uuid(), placement: z.enum(['before', 'after']) }).strict()
 export type SavedCommandMove = z.infer<typeof savedCommandMoveSchema>
 export const savedCommandRunSchema = savedCommandReferenceSchema.extend({ workspaceId: z.uuid().nullable(), terminalId: z.uuid().nullable().optional() }).strict()
@@ -36,6 +38,7 @@ export interface SavedCommandsAPI {
     remove(input: Pick<SavedCommand, 'id' | 'revision'>): Promise<ApiResult<null>>
     clear(input: SavedCommandsClear): Promise<ApiResult<null>>
     tag(input: SavedCommandTagUpdate): Promise<ApiResult<null>>
+    renameTag(input: SavedCommandTagRename): Promise<ApiResult<number>>
     move(input: SavedCommandMove): Promise<ApiResult<null>>
     preview(input: SavedCommandRun): Promise<ApiResult<SavedCommandPreview>>
     run(input: SavedCommandRun & { token: string }): Promise<ApiResult<TerminalSession>>

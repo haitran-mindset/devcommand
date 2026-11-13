@@ -1,7 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { version as appVersion } from '../../../package.json'
 import { Link as RouterLink, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { Check, CheckCircle2, ChevronDown, ChevronRight, CircleHelp, Database, Folder, FolderOpen, GitBranch, GitCommitHorizontal, House, Info, KeyRound, LayoutGrid, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radio, RefreshCw, Search, Settings, SquareTerminal, Sun, Terminal, X, Clock, Archive, Bookmark, type LucideIcon } from 'lucide-react'
+import { ProjectScriptsPage } from './features/project-scripts/ProjectScriptsPage'
+import { NotificationCenter } from './components/NotificationCenter'
+import { useNotifications, type NotificationKind } from './lib/notifications'
+import { useNotificationEvents } from './lib/use-notification-events'
 import { KeyboardShortcuts } from './components/KeyboardShortcuts'
 import { Button } from './components/ui/button'
 import { cn } from './lib/utils'
@@ -29,6 +33,7 @@ const nav: { route: AppRoute; label: string; icon: LucideIcon }[] = [
   { route: 'dashboard', label: 'Dashboard', icon: House },
   { route: 'commands', label: 'Command Explorer', icon: LayoutGrid },
   { route: 'workspaces', label: 'Repositories', icon: Folder },
+  { route: 'project-scripts', label: 'Project Scripts', icon: SquareTerminal },
   { route: 'git', label: 'Git Manager', icon: GitBranch },
   { route: 'ssh', label: 'SSH Manager', icon: KeyRound },
   { route: 'shell', label: 'Shell Tools', icon: SquareTerminal },
@@ -59,13 +64,17 @@ function useTheme(theme: AppSettings['theme']) {
 export function App() {
   const query = useSettings()
   const update = useUpdateSettings()
+  const saveSettings = update.mutate
   const settings = query.data ?? defaultSettings
+  const preferencesLoaded = !!query.data
   const navigate = useNavigate()
   const location = useLocation()
   const restored = useRef(false)
   const help = useRef<HTMLDialogElement>(null)
   const [gitOpen, setGitOpen] = useState(location.pathname.startsWith('/git'))
-  const [notice, setNotice] = useState('')
+  const [notice, setToast] = useState('')
+  const setNotice = useCallback((message: string, kind: NotificationKind = 'info') => { setToast(message); if (message) useNotifications.getState().add(kind, message) }, [])
+  useNotificationEvents()
   const session = useSession()
   const client = useQueryClient()
   const workspaces = useWorkspaces()
@@ -80,7 +89,7 @@ export function App() {
       if (typeof window.devcommand.workspace.open !== 'function') throw new Error('Restart DevCommand to enable opening repository folders.')
       unwrap(await window.devcommand.workspace.open(selectedWorkspace.id))
       setNotice('Repository folder opened.')
-    } catch (failure) { setNotice(failure instanceof Error ? failure.message : 'Unable to open repository folder.') }
+    } catch (failure) { setNotice(failure instanceof Error ? failure.message : 'Unable to open repository folder.', 'error') }
     finally { setOpeningRepository(false) }
   }
   const refreshRepository = async () => {
@@ -95,7 +104,7 @@ export function App() {
         client.invalidateQueries({ queryKey: ['preview'] }),
       ])
       setNotice('Repository refreshed.')
-    } catch (failure) { setNotice(failure instanceof Error ? failure.message : 'Unable to refresh repository.') }
+    } catch (failure) { setNotice(failure instanceof Error ? failure.message : 'Unable to refresh repository.', 'error') }
     finally { setRefreshingRepository(false) }
   }
 
@@ -106,13 +115,33 @@ export function App() {
   const exploring = route === 'commands' || route === 'my-commands'
   const gitTab = route === 'git-config' ? 'config' : route === 'git-remote' ? 'remotes' : new URLSearchParams(location.search).get('tab') ?? 'overview'
   useTheme(settings.theme)
-  useEffect(() => window.devcommand.library.onHistoryError(setNotice), [])
+  useEffect(() => window.devcommand.library.onHistoryError(setToast), [])
+  useEffect(() => { if (update.isError) useNotifications.getState().add('error', 'Could not save preferences', 'Try again.') }, [update.isError])
+  useEffect(() => { if (repository.isError) useNotifications.getState().add('error', 'Repository unavailable', 'Refresh the repository to try again.') }, [repository.isError])
+  useEffect(() => { if (repository.data?.conflicts) useNotifications.getState().add('warning', 'Merge conflicts', 'Resolve conflicts in the selected repository.') }, [repository.data?.conflicts, selectedWorkspace?.id])
   useEffect(() => {
     if (query.data && !restored.current) {
       restored.current = true
       navigate(`/${query.data.route}`, { replace: true })
     }
   }, [query.data, navigate])
+  useEffect(() => {
+    if (!preferencesLoaded) return
+    let active = true
+    const take = () => { void (async () => {
+      const pending = unwrap(await window.devcommand.tray.takeQuickTerminal())
+      if (!active || !pending) return
+      const environment = unwrap(await window.devcommand.terminal.environment())
+      if (!active) return
+      const terminal = unwrap(await window.devcommand.terminal.create({ shellId: environment.defaultShellId, cols: 100, rows: 24 }))
+      if (!active) { await window.devcommand.terminal.close(terminal.id); return }
+      useSession.getState().setInserted(terminal)
+      saveSettings({ terminalVisible: true })
+    })().catch(() => { if (active) setNotice('Unable to open Quick Terminal. Check the shell and available terminal tabs.', 'error') }) }
+    const unsubscribe = window.devcommand.tray.onQuickTerminal(take)
+    take()
+    return () => { active = false; unsubscribe() }
+  }, [preferencesLoaded, saveSettings, setNotice])
   useEffect(() => {
     if (!restored.current || !routes.includes(route as AppRoute) || route === settings.route) return
     update.mutate({ route: route as AppRoute })
@@ -134,18 +163,18 @@ export function App() {
   }, [navigate, settings.terminalVisible, update])
   useEffect(() => {
     if (!notice) return
-    const timer = setTimeout(() => setNotice(''), 3000)
+    const timer = setTimeout(() => setToast(''), 3000)
     return () => clearTimeout(timer)
   }, [notice])
   const windowControl = (action: 'minimize' | 'maximize' | 'close') => {
-    void window.devcommand?.window.control(action).then((result) => { if (!result.ok) setNotice(result.error) }).catch(() => setNotice('Window action failed.'))
+    void window.devcommand?.window.control(action).then((result) => { if (!result.ok) setNotice(result.error, 'error') }).catch(() => setNotice('Window action failed.', 'error'))
   }
   if (query.isPending) return <div className="startup"><SquareTerminal /><h1>DevCommand</h1><p>Loading local preferences…</p></div>
   if (query.isError) return <div className="startup"><Info /><h1>Unable to load preferences</h1><p role="alert">{query.error.message}</p><Button onClick={() => void query.refetch()}>Try again</Button></div>
   return <div className={cn('application command-center', settings.sidebarCollapsed && 'sidebar-collapsed')}>
     <header className="titlebar">
       {exploring ? <div className="search-bar global-search"><Search /><input aria-label="Search commands" maxLength={200} placeholder="Search commands, aliases and tools…" value={session.query} onChange={(event) => session.setQuery(event.target.value)} /><button className="search-shortcut" aria-label="Open command palette" onClick={() => setPaletteOpen(true)}><kbd>{navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'} K</kbd></button></div> : <button className="global-search search-trigger" onClick={() => setPaletteOpen(true)}><Search /><span>Search commands, aliases and tools…</span><kbd>{navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'} K</kbd></button>}
-      <div className="header-tools"><IconButton label="Keyboard shortcuts" onClick={() => help.current?.showModal()}><CircleHelp /></IconButton><IconButton label="Open settings" onClick={() => navigate('/settings')}><Settings /></IconButton></div>
+      <div className="header-tools"><NotificationCenter /><IconButton label="Keyboard shortcuts" onClick={() => help.current?.showModal()}><CircleHelp /></IconButton><IconButton label="Open settings" onClick={() => navigate('/settings')}><Settings /></IconButton></div>
     </header>
     <aside className="sidebar">
       <div className="sidebar-brand"><div className="traffic-lights"><button aria-label="Close window" title="Close window" onClick={() => windowControl('close')} /><button aria-label="Minimize window" title="Minimize window" onClick={() => windowControl('minimize')} /><button aria-label="Maximize or restore window" title="Maximize or restore window" onClick={() => windowControl('maximize')} /></div><div className="brand-lockup"><div className="brand-icon"><Terminal /></div><div className="brand"><strong>DevCommand</strong><span>Developer Command Center</span></div></div></div>
@@ -160,7 +189,7 @@ export function App() {
     <main className="workspace">
       <section className="workspace-context" aria-label="Repository context"><RepositoryPicker notify={setNotice} /><span className="branch-pill"><GitBranch />{repository.data ? `${repository.data.branch}${repository.data.unborn ? ' (unborn)' : ''}${repository.data.bare ? ' (bare)' : ''}` : 'No branch'}{repository.data && <i />}</span><span className={cn('repo-state', repository.data?.clean && 'is-clean', repository.isError && 'has-error')}><CheckCircle2 />{repository.isFetching ? 'Refreshing…' : repository.isError ? 'Repository unavailable' : repository.data ? repository.data.conflicts ? 'Merge conflicts' : repository.data.clean ? 'Clean working tree' : 'Uncommitted changes' : 'No repository connected'}</span><div className="context-actions">{selectedWorkspace && <Button variant="outline" size="sm" disabled={openingRepository} title="Open repository folder" onClick={() => void openRepository()}><FolderOpen />{openingRepository ? 'Opening…' : 'Open repository'}</Button>}<IconButton label="Refresh repository" disabled={!selectedWorkspace || refreshingRepository || repository.isFetching} onClick={() => void refreshRepository()}><RefreshCw /></IconButton></div></section>
       <div className={cn('page-content', route === 'settings' && 'settings-content')}>
-        {(route === 'commands' || route === 'my-commands') ? <CommandExplorer key={location.key} notify={setNotice} favoritesOnly={route === 'my-commands'} /> : route === 'saved-commands' ? <SavedCommandsPage notify={setNotice} /> : route === 'workspaces' ? <WorkspacesPage /> : route === 'history' ? <HistoryPage /> : ['git', 'git-config', 'git-remote'].includes(route) ? <GitManager route={route} /> : route === 'ssh' ? <SshManager notify={setNotice} /> : route === 'docker' ? <DockerManager /> : route === 'shell' ? <ManagedPanel /> : route === 'settings' ? <SettingsPage settings={settings} save={(patch) => update.mutate(patch)} pending={update.isPending} /> : route === 'dashboard' ? <Dashboard /> : <ModulePage route={route} navigate={navigate} />}
+        {(route === 'commands' || route === 'my-commands') ? <CommandExplorer key={location.key} notify={setNotice} favoritesOnly={route === 'my-commands'} /> : route === 'project-scripts' ? <ProjectScriptsPage /> : route === 'saved-commands' ? <SavedCommandsPage notify={setNotice} /> : route === 'workspaces' ? <WorkspacesPage /> : route === 'history' ? <HistoryPage /> : ['git', 'git-config', 'git-remote'].includes(route) ? <GitManager route={route} /> : route === 'ssh' ? <SshManager notify={setNotice} /> : route === 'docker' ? <DockerManager /> : route === 'shell' ? <ManagedPanel /> : route === 'settings' ? <SettingsPage settings={settings} save={(patch) => update.mutate(patch)} pending={update.isPending} /> : route === 'dashboard' ? <Dashboard /> : <ModulePage route={route} navigate={navigate} />}
       </div>
       <div className={cn('bottom-workspace', exploring && 'with-tasks')} hidden={!settings.terminalVisible}>
         <TerminalDock visible={settings.terminalVisible} height={settings.terminalHeight} saveHeight={(height) => update.mutate({ terminalHeight: height })} hide={() => update.mutate({ terminalVisible: false })} />

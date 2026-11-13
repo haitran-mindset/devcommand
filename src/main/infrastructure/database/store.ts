@@ -1,4 +1,4 @@
-import { savedCommandSaveSchema, savedCommandSchema, savedCommandReferenceSchema, savedCommandTagUpdateSchema, savedCommandMoveSchema, savedCommandsClearSchema, type SavedCommandsClear, type SavedCommandMove, type SavedCommand, type SaveSavedCommand, type SavedCommandTagUpdate } from '../../../shared/saved-commands'
+import { savedCommandSaveSchema, savedCommandSchema, savedCommandReferenceSchema, savedCommandTagUpdateSchema, savedCommandMoveSchema, savedCommandsClearSchema, savedCommandTagRenameSchema, type SavedCommandTagRename, type SavedCommandsClear, type SavedCommandMove, type SavedCommand, type SaveSavedCommand, type SavedCommandTagUpdate } from '../../../shared/saved-commands'
 import { PublicError } from '../../security/errors'
 import { z } from 'zod'
 import Database from 'better-sqlite3'
@@ -164,9 +164,20 @@ export function openSettingsStore(path: string) {
         db.update(savedCommands).set({ tags: JSON.stringify(tags), revision: randomUUID(), updatedAt: new Date().toISOString() }).where(eq(savedCommands.id, id)).run()
       }
     })()
+    const renameSavedCommandTag = (input: SavedCommandTagRename): number => sqlite.transaction(() => {
+      const { from, to } = savedCommandTagRenameSchema.parse(input)
+      const affected = listSavedCommands().filter(entry => entry.tags.includes(from))
+      if (!affected.length) throw new PublicError('This tag no longer exists. Refresh the list and try again.')
+      if (from === to) return 0
+      for (const entry of affected) {
+        const tags = [...new Set(entry.tags.map(tag => tag === from ? to : tag))]
+        db.update(savedCommands).set({ tags: JSON.stringify(tags), revision: randomUUID(), updatedAt: new Date().toISOString() }).where(eq(savedCommands.id, entry.id)).run()
+      }
+      return affected.length
+    })()
     // Recover interrupted runs after a crash without pretending they completed.
     for (const entry of history()) if (entry.execution.status === 'running') saveHistory({ ...entry, execution: { ...entry.execution, status: 'cancelled', finishedAt: new Date().toISOString(), error: 'Application closed before completion.' } })
-    return { clearSavedCommands, moveSavedCommand, listSavedCommands, saveSavedCommand, removeSavedCommand, tagSavedCommands, requireSavedCommand, get, update, listWorkspaces, selectedWorkspace, selectWorkspace, addWorkspace, removeWorkspace, favoriteWorkspace, favorites, favoriteOrder, setFavoriteOrder, favoriteCommand, history, clearHistory, saveHistory, close: () => sqlite.close() }
+    return { renameSavedCommandTag, clearSavedCommands, moveSavedCommand, listSavedCommands, saveSavedCommand, removeSavedCommand, tagSavedCommands, requireSavedCommand, get, update, listWorkspaces, selectedWorkspace, selectWorkspace, addWorkspace, removeWorkspace, favoriteWorkspace, favorites, favoriteOrder, setFavoriteOrder, favoriteCommand, history, clearHistory, saveHistory, close: () => sqlite.close() }
   } catch (error) {
     sqlite.close()
     throw error

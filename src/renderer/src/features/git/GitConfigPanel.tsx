@@ -31,5 +31,5 @@ export function GitConfigPanel({ entries, onEdit }: { entries: GitConfig[]; onEd
 }
 
 function EditableValue({ value, label, onEdit }: { value?: ConfigValue; label: string; onEdit: () => void }) {
-  return <div className="git-config-editable"><span className={value ? undefined : 'is-unset'} title={value?.value}>{value ? value.value || 'Empty value' : 'Not set'}</span><Button variant="ghost" size="icon-sm" aria-label={label} title={label} onClick={onEdit}><Pencil /></Button></div>
+  return <div className="git-config-editable"><span className={value ? undefined : 'is-unset'} title={value?.value}>{value ? value.value || 'Empty value' : 'Not set'}</span><Button variant="ghost" size="icon-sm" aria-label={label} title={label} onClick={onEdit}><Pencil className="size-3" /></Button></div>
 }

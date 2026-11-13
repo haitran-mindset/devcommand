@@ -7,7 +7,7 @@ import { PublicError } from '../services/workspace/service'
 import { registerRuntime } from './runtime'
 import type { SettingsStore } from '../infrastructure/database/store'
 
-export function registerIpc(window: BrowserWindow, rendererUrl: string, store: SettingsStore): () => Promise<void> {
+export function registerIpc(window: BrowserWindow, rendererUrl: string, store: SettingsStore, tray?: { takeQuickTerminal: () => boolean }): () => Promise<void> {
   const authorize = (event: IpcMainInvokeEvent) => assertTrustedSender({
     senderId: event.sender.id, expectedId: window.webContents.id,
     frameUrl: event.senderFrame?.url, isMainFrame: event.senderFrame === window.webContents.mainFrame,
@@ -27,6 +27,7 @@ export function registerIpc(window: BrowserWindow, rendererUrl: string, store: S
       }
     })
   }
+  handle('tray:take-quick-terminal', payload => { if (payload !== undefined) throw new Error('Unexpected payload'); return tray?.takeQuickTerminal() ?? false })
   handle('settings:get', (payload) => {
     if (payload !== undefined) throw new Error('Unexpected payload')
     return store.get()

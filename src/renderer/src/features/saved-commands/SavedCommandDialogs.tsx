@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Copy, Play, Save, Terminal, Trash2, X } from 'lucide-react'
+import { Copy, Hash, Pencil, Play, Save, Terminal, Trash2, X } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import type { SavedCommand, SavedCommandRun, SaveSavedCommand } from '../../../../shared/saved-commands'
-import { savedCommandSaveSchema, savedCommandTitle } from '../../../../shared/saved-commands'
+import { savedCommandSaveSchema, savedCommandTagSchema, savedCommandTitle } from '../../../../shared/saved-commands'
 import { Button } from '../../components/ui/button'
 import { SelectField } from '../../components/ui/select-field'
 import { unwrap, useUpdateSettings } from '../../lib/settings'
@@ -17,10 +17,22 @@ function Modal({ title, children, busy, onClose }: { title: string; children: Re
     <div className="saved-dialog-content"><header><div><Terminal /><h2 id="saved-dialog-title">{title}</h2></div><Button type="button" variant="ghost" size="icon-sm" disabled={busy} aria-label="Close dialog" onClick={onClose}><X /></Button></header>{children}</div>
   </dialog>
 }
-export function SavedCommandEditor({ entry, onClose, onSave }: { entry: SavedCommand | null; onClose: () => void; onSave: (input: SaveSavedCommand) => Promise<void> }) {
+export function SavedCommandEditor({ entry, availableTags, onClose, onSave }: { entry: SavedCommand | null; availableTags: string[]; onClose: () => void; onSave: (input: SaveSavedCommand) => Promise<void> }) {
   const [title, setTitle] = useState(entry?.title ?? ''), [command, setCommand] = useState(entry?.command ?? '')
   const [description, setDescription] = useState(entry?.description ?? ''), [tags, setTags] = useState(entry?.tags.join(', ') ?? '')
   const [busy, setBusy] = useState(false), [error, setError] = useState('')
+  const parts = tags.split(',').map(value => value.trim())
+  const lastTag = (parts.at(-1) ?? '').toLowerCase()
+  const selectedTags = parts.filter(Boolean).map(value => value.toLowerCase())
+  const fragment = availableTags.includes(lastTag) ? '' : lastTag
+  const suggestions = availableTags.filter(tag => !selectedTags.includes(tag) && tag.includes(fragment)).slice(0, 8)
+  const chooseTag = (tag: string) => {
+    const next = [...parts]
+    if (lastTag && !availableTags.includes(lastTag)) next.pop()
+    const values = [...new Set([...next.filter(Boolean).map(value => value.toLowerCase()), tag])]
+    if (values.length > 12) { setError('A command can have at most 12 tags.'); return }
+    setTags(values.join(', ') + ', '); setError('')
+  }
   const saving = useRef(false)
   const save = async () => {
     if (saving.current) return
@@ -36,11 +48,26 @@ export function SavedCommandEditor({ entry, onClose, onSave }: { entry: SavedCom
       <label><span>Title <span className="saved-optional">optional</span></span><input aria-label="Title" autoFocus maxLength={100} value={title} onChange={event => setTitle(event.target.value)} placeholder="Start local server" disabled={busy} /></label>
       <label>Command<textarea aria-label="Command" aria-describedby="saved-command-help" required rows={4} maxLength={8192} value={command} onChange={event => setCommand(event.target.value)} placeholder="npm run dev" spellCheck={false} autoCapitalize="off" autoComplete="off" disabled={busy} /><small id="saved-command-help">Supports multiple lines. Keep credentials out.</small></label>
       <label><span>Description <span className="saved-optional">optional</span></span><input aria-label="Description" maxLength={500} value={description} onChange={event => setDescription(event.target.value)} placeholder="When to use this command" disabled={busy} /></label>
-      <label>Tags<input aria-label="Tags" aria-describedby="saved-tags-help" maxLength={500} value={tags} onChange={event => setTags(event.target.value)} placeholder="node, development" disabled={busy} /><small id="saved-tags-help">Comma-separated · up to 12 tags.</small></label>
+      <label>Tags<input aria-label="Tags" aria-describedby="saved-tags-help" maxLength={500} value={tags} onChange={event => setTags(event.target.value)} placeholder="Choose below or type a new tag" disabled={busy} /><small id="saved-tags-help">Choose an existing tag or enter comma-separated tags · up to 12.</small></label>
+      {availableTags.length > 0 && <div className="saved-tag-suggestions" role="group" aria-label="Existing tag suggestions">{suggestions.map(tag => <button type="button" key={tag} disabled={busy} aria-label={`Add tag ${tag}`} onClick={() => chooseTag(tag)}><Hash />{tag}</button>)}{!suggestions.length && <span>{fragment ? 'No matching existing tags. You can save this as a new tag.' : 'All matching tags are already selected.'}</span>}</div>}
       {error && <p role="alert" className="terminal-error">{error}</p>}
       <footer><Button type="button" variant="outline" disabled={busy} onClick={onClose}>Cancel</Button><Button disabled={busy}><Save />{busy ? 'Saving…' : 'Save'}</Button></footer>
     </form>
   </Modal>
+}
+export function RenameSavedTag({ tag, availableTags, count, onClose, onRename }: { tag: string; availableTags: string[]; count: number; onClose: () => void; onRename: (name: string) => Promise<void> }) {
+  const [name, setName] = useState(tag), [busy, setBusy] = useState(false), [error, setError] = useState('')
+  const saving = useRef(false)
+  const normalized = name.trim().toLowerCase()
+  const merge = normalized !== tag && availableTags.includes(normalized)
+  return <Modal title="Rename tag" busy={busy} onClose={onClose}><form className="saved-form saved-rename-form" onSubmit={event => {
+    event.preventDefault()
+    if (saving.current) return
+    const result = savedCommandTagSchema.safeParse(name)
+    if (!result.success) { setError('Use 1–40 characters without commas or control characters.'); return }
+    saving.current = true; setBusy(true); setError('')
+    void onRename(result.data).then(onClose).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : 'Unable to rename tag.')).finally(() => { saving.current = false; setBusy(false) })
+  }}><p>Rename <strong>#{tag}</strong> on {count} {count === 1 ? 'command' : 'commands'}.</p><label>Tag name<input autoFocus required maxLength={40} value={name} disabled={busy} onChange={event => setName(event.target.value)} /></label>{merge && <p className="saved-tag-merge" role="status">#{normalized} already exists. The tags will be merged without duplicates.</p>}{error && <p className="terminal-error" role="alert">{error}</p>}<footer><Button type="button" variant="outline" disabled={busy} onClick={onClose}>Cancel</Button><Button disabled={busy || !normalized || normalized === tag}><Pencil />{busy ? 'Renaming…' : 'Rename'}</Button></footer></form></Modal>
 }
 export function DeleteSavedCommand({ entry, onClose, onDelete }: { entry: SavedCommand; onClose: () => void; onDelete: () => Promise<void> }) {
   const [busy, setBusy] = useState(false), [error, setError] = useState('')
