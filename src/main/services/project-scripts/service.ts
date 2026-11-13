@@ -136,7 +136,7 @@ export class ProjectScriptsService {
     const script = snapshot.scripts.find(entry => entry.id === request.id)
     if (!script) throw new PublicError('This script is no longer available.')
     const executable = findExecutable(script.runner)
-    if (!executable) throw new PublicError(`Install ${script.runner} and restart DevCommand to run this script.`)
+    if (!executable) throw new PublicError(`DevCommand cannot find ${script.runner} on its PATH. If it is already installed with a version manager, open DevCommand from Terminal or check your Node installation.`)
     return { request, snapshot, script, executable, state: hash(JSON.stringify([snapshot.revision, executable, script])) }
   }
   async preview(input: ProjectScriptRequest) {

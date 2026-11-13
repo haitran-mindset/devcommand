@@ -1,6 +1,6 @@
 {
   "name": "devcommand",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Local-first developer command center",
   "author": "DevCommand",
   "private": true,
@@ -41,6 +41,7 @@
     "test:e2e:saved-commands": "node tests/e2e/saved-commands.mjs",
     "test:e2e:notifications": "node tests/e2e/notifications.mjs",
     "test:e2e:project-scripts": "node tests/e2e/project-scripts.mjs",
+    "test:e2e:finder-path": "node tests/e2e/project-scripts.mjs --finder-path",
     "test:e2e:tray": "node tests/e2e/tray.mjs"
   },
   "build": {

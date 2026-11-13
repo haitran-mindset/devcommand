@@ -1,6 +1,7 @@
 import { accessSync, constants, readFileSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, isAbsolute, join } from 'node:path'
+import { nvmNodePath } from './node-path'
 import type { TerminalEnvironment } from '../../../shared/runtime'
 
 export interface ShellEnvironment extends TerminalEnvironment { paths: Map<string, string> }
@@ -31,6 +32,7 @@ export function getShellEnvironment(): ShellEnvironment {
   const defaultShellId = shells.find((shell) => paths.get(shell.id) === process.env.SHELL)?.id ?? shells[0].id
   return { cwd, shells, defaultShellId, paths }
 }
+let nodePathCache: { home: string; root?: string; checkedAt: number; path?: string } | undefined
 export function childEnvironment(): NodeJS.ProcessEnv {
   const env = { ...process.env }
   // Keep the local user's PATH and shell setup, but never inherit Electron inspector/loader controls.
@@ -39,6 +41,11 @@ export function childEnvironment(): NodeJS.ProcessEnv {
   }
   const paths = (env.PATH ?? '').split(delimiter).filter(isAbsolute)
   if (process.platform !== 'win32') paths.push(join(homedir(), '.local', 'bin'), join(homedir(), '.npm-global', 'bin'), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin')
+  if (process.platform !== 'win32') {
+    const home = homedir(), now = Date.now()
+    if (!nodePathCache || nodePathCache.home !== home || nodePathCache.root !== env.NVM_DIR || now - nodePathCache.checkedAt > 30_000) nodePathCache = { home, root: env.NVM_DIR, checkedAt: now, path: nvmNodePath(home, env) }
+    if (nodePathCache.path) paths.push(nodePathCache.path)
+  }
   env.PATH = [...new Set(paths)].join(delimiter)
   env.TERM = 'xterm-256color'
   env.COLORTERM = 'truecolor'

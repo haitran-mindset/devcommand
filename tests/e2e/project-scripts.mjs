@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, rm, symlink, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { _electron as electron } from 'playwright'
@@ -12,7 +12,19 @@ await mkdir(join(repo, 'scripts'))
 await writeFile(join(repo, 'scripts', 'check.sh'), "#!/bin/sh\nprintf 'SHELL_SCRIPT_OK\\n'\n")
 await writeFile(join(repo, 'health.sh'), "printf 'ROOT_SCRIPT_OK\\n'\n")
 await writeFile(join(repo, 'Makefile'), "hello:\n\t@printf 'MAKE_TARGET_OK\\n'\n")
+const finderPath = process.argv.includes('--finder-path')
+let nvmBin
+if (finderPath) {
+  const nvmRoot = join(root, 'nvm'), version = `v${process.versions.node}`
+  nvmBin = join(nvmRoot, 'versions', 'node', version, 'bin')
+  await mkdir(nvmBin, { recursive: true }); await mkdir(join(nvmRoot, 'alias'))
+  await symlink(process.execPath, join(nvmBin, 'node'))
+  const npm = process.env.npm_execpath ?? execFileSync('/usr/bin/which', ['npm'], { encoding: 'utf8' }).trim()
+  await symlink(await realpath(npm), join(nvmBin, 'npm'))
+  await writeFile(join(nvmRoot, 'alias', 'default'), version)
+}
 const env = { ...process.env, ZDOTDIR: root, SSH_AUTH_SOCK: join(root, 'unused-agent.sock'), GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' }; delete env.ELECTRON_RUN_AS_NODE
+if (finderPath) { env.PATH = '/usr/bin:/bin:/usr/sbin:/sbin'; env.NVM_DIR = join(root, 'nvm') }
 let app
 try {
   app = await electron.launch({ env, args: [resolve('.'), `--user-data-dir=${join(root, 'profile')}`] })
@@ -47,6 +59,11 @@ try {
   await modal.getByRole('button', { name: 'Confirm & Run', exact: true }).click()
   await modal.waitFor({ state: 'detached' })
   await page.waitForFunction(() => window.scriptOutput.includes('PROJECT_SCRIPT_OK') && window.scriptOutput.includes('project scripts'))
+  if (finderPath) {
+    const input = page.locator('.terminal-view:not([hidden]) .xterm-helper-textarea')
+    await input.focus(); await page.keyboard.type("printf '%s\\n' \"$PATH\"; node --version"); await page.keyboard.press('Enter')
+    await page.waitForFunction(bin => window.scriptOutput.includes(bin), nvmBin)
+  }
   await page.getByRole('button', { name: 'Run hello from Makefile', exact: true }).click()
   modal = page.getByRole('dialog', { name: 'Run hello', exact: true })
   await modal.getByRole('button', { name: 'Confirm & Run', exact: true }).click()
