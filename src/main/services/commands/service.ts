@@ -126,9 +126,9 @@ export class CommandService {
     }
 
     if (definition.projectFile) { try { if (!lstatSync(join(cwd, definition.projectFile)).isFile()) throw new Error() } catch { throw new PublicError(`The selected workspace requires ${definition.projectFile}.`) } }
-    if (repository?.bare && /^(git\.(status|diff|restore|reset\.|stash\.|stage|unstage|branch.switch|pull))/.test(definition.id)) throw new PublicError('This operation requires a working tree; the selected repository is bare.')
-    if (repository?.unborn && /git\.(reset\.|restore|stash\.|branch.create|log)/.test(definition.id)) throw new PublicError('This repository has no commits yet. Create the initial commit outside DevCommand first.')
-    if (repository?.conflicts && ['git.pull', 'git.branch.switch', 'git.stash.apply', 'git.stash.pop'].includes(definition.id)) throw new PublicError('Resolve the existing merge conflicts before running this command.')
+    if (repository?.bare && /^(git\.(status|diff|restore|reset\.|stash\.|stage|unstage|branch.switch|checkout|pull))/.test(definition.id)) throw new PublicError('This operation requires a working tree; the selected repository is bare.')
+    if (repository?.unborn && /git\.(reset\.|restore|stash\.|branch.create|log|checkout)/.test(definition.id)) throw new PublicError('This repository has no commits yet. Create the initial commit outside DevCommand first.')
+    if (repository?.conflicts && ['git.pull', 'git.branch.switch', 'git.checkout.branch', 'git.checkout.b', 'git.checkout.commit', 'git.stash.apply', 'git.stash.pop'].includes(definition.id)) throw new PublicError('Resolve the existing merge conflicts before running this command.')
     if (params.name && repository) {
       const exists = repository.remotes.some((remote) => remote.name === params.name)
       if (definition.id === 'git.remote.add' && exists) throw new PublicError('That remote already exists. Use Change Git Remote URL instead.')
@@ -141,11 +141,11 @@ export class CommandService {
     }
     if (params.branch && repository) {
       if (!await gitProbe(cwd, ['check-ref-format', '--branch', params.branch], true)) throw new PublicError('Invalid Git branch name.')
-      if (['git.branch.switch', 'git.branch.delete', 'git.branch.rename', 'git.push'].includes(definition.id) && !await gitProbe(cwd, ['rev-parse', '--verify', `refs/heads/${params.branch}`], true)) throw new PublicError('That local branch does not exist.')
+      if (['git.branch.switch', 'git.branch.delete', 'git.branch.rename', 'git.push', 'git.checkout.branch'].includes(definition.id) && !await gitProbe(cwd, ['rev-parse', '--verify', `refs/heads/${params.branch}`], true)) throw new PublicError('That local branch does not exist.')
       if (definition.id === 'git.branch.delete' && repository.branch === params.branch) throw new PublicError('Switch away from the current branch before deleting it.')
-      if (definition.id === 'git.branch.create' && await gitProbe(cwd, ['rev-parse', '--verify', `refs/heads/${params.branch}`], true)) throw new PublicError('That local branch already exists.')
+      if (['git.branch.create', 'git.checkout.b'].includes(definition.id) && await gitProbe(cwd, ['rev-parse', '--verify', `refs/heads/${params.branch}`], true)) throw new PublicError('That local branch already exists.')
     }
-    if (repository && ['git.branch.delete', 'git.branch.rename', 'git.branch.switch'].includes(definition.id)) {
+    if (repository && ['git.branch.delete', 'git.branch.rename', 'git.branch.switch', 'git.checkout.branch'].includes(definition.id)) {
       const branches = (await this.git.snapshot({ workspaceId: request.workspaceId!, section: 'branches' })).branches
       const target = branches.find((entry) => entry.name === params.branch)
       if (target?.worktreePath && (definition.id === 'git.branch.delete' || !target.current)) throw new PublicError('This branch is checked out in a worktree. Switch it there before changing it.')
@@ -161,6 +161,7 @@ export class CommandService {
       if (!file) throw new PublicError('This path is no longer in the change list. Refresh before proceeding.')
       if (definition.id === 'git.unstage' && (file.untracked || file.indexStatus === ' ')) throw new PublicError('This file has no staged changes.')
       if (definition.id === 'git.stage' && !file.untracked && file.worktreeStatus === ' ' && !file.conflicted) throw new PublicError('This file has no unstaged changes.')
+      if (definition.id === 'git.checkout.file' && (file.untracked || file.worktreeStatus === ' ')) throw new PublicError('This file has no unstaged changes to discard.')
     }
     if (definition.id === 'git.stash.push' && !(await this.git.files(request.workspaceId!)).some((file) => !file.untracked)) throw new PublicError('There are no tracked changes to stash. Untracked files are not included.')
     if (repository && ['git.stash.apply', 'git.stash.pop'].includes(definition.id) && !repository.clean) throw new PublicError('Use a clean working tree before applying or popping a stash.')
@@ -225,6 +226,10 @@ export class CommandService {
     if (definition.id === 'git.reset.soft') consequences.push('Moves HEAD to the target commit; files and index remain unchanged.')
     if (definition.id === 'git.branch.delete') consequences.push(`Deletes merged branch ${params.branch}. Unmerged or checked-out branches are refused; force deletion is unavailable.`)
     if (definition.id === 'git.branch.rename') consequences.push(`Renames ${params.branch} to ${params.newBranch}. Remote branches are not renamed.`)
+    if (definition.id === 'git.checkout.branch') consequences.push(`Switches to branch ${params.branch}. Working tree files will update to match this branch.`)
+    if (definition.id === 'git.checkout.b') consequences.push(`Creates and switches to new branch ${params.branch}.`)
+    if (definition.id === 'git.checkout.commit') consequences.push(`Checks out commit ${params.ref} in detached HEAD state. You can inspect changes without affecting current branches.`)
+    if (definition.id === 'git.checkout.file') consequences.push(`Discards unstaged changes in ${params.path}. The file will be restored from the index. Unsaved changes will be lost.`)
     if (definition.id === 'git.stage' && repository?.conflicts) consequences.push('Staging a conflicted file marks it resolved in the index. Review its content and remove all conflict markers first; DevCommand does not resolve conflicts automatically.')
     if (definition.id === 'git.stage') consequences.push(`Stages the current content/deletion of ${params.path}. This does not create a commit.`)
     if (definition.id === 'git.unstage' && repository?.conflicts) consequences.push('Unstaging can clear unmerged index entries while leaving conflict markers in the file. Resolve the working-tree content before committing.')

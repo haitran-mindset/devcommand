@@ -44,7 +44,7 @@ describe('command families', () => {
     const groups = groupCommands(catalog.filter((entry) => entry.id.startsWith('files.')))
     expect(groups).toHaveLength(1)
     expect(groups[0].title).toBe('File Operations')
-    expect(groups[0].commands).toHaveLength(7)
+    expect(groups[0].commands).toHaveLength(11)
     expect(defaultCommand(groups[0]).id).toBe('files.create')
   })
   it('groups all Find actions into one searchable family', () => {
@@ -78,5 +78,7 @@ describe('command families', () => {
     expect(sharedActionParams(find('system.port'), find('system.port.stop'), { port: '4321' })).toEqual({ port: '4321' })
     expect(sharedActionParams(find('permissions.inspect'), find('permissions.chmod'), { target: 'a file.txt' })).toEqual({ target: 'a file.txt' })
     expect(sharedActionParams(find('git.config.set'), find('git.config.set'), { key: 'user.name', scope: 'local', value: 'private' })).toEqual({ key: 'user.name', scope: 'local' })
+    expect(sharedActionParams(find('files.create'), find('files.mkdir'), { targetPath: 'new-file.txt' })).toEqual({})
+    expect(sharedActionParams(find('files.create'), find('files.mkdir'), { targetPath: 'custom-folder' })).toEqual({ targetPath: 'custom-folder' })
   })
 })

@@ -13,6 +13,7 @@ export function registerWorkspace(handle: IpcHandle, window: BrowserWindow, stor
     return workspaces.addDirectory(selection.filePaths[0])
   })
   handle('workspace:select', async (payload) => { const id = idSchema.parse(payload); await workspaces.resolve(id); store.selectWorkspace(id); return null })
+  handle('workspace:deselect', (payload) => { z.undefined().parse(payload); store.deselectWorkspace(); return null })
   handle('workspace:remove', (payload) => { store.removeWorkspace(idSchema.parse(payload)); return null })
   handle('workspace:favorite', (payload) => { const { id, favorite } = z.object({ id: idSchema, favorite: z.boolean() }).strict().parse(payload); store.favoriteWorkspace(id, favorite); return null })
   handle('workspace:status', (payload) => workspaces.status(idSchema.parse(payload)))

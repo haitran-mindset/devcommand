@@ -175,6 +175,35 @@ describe('workspace and execution safety against real Git repositories', () => {
       await expect(f.commands.preview({ commandId: 'git.status', params: {}, workspaceId })).rejects.toThrow('workspace')
     } finally { await f.close() }
   })
+  it('executes git.checkout commands to create branches, switch, checkout commits and discard file changes', async () => {
+    const f = fixture()
+    try {
+      const workspaceId = (await f.workspace.addDirectory(f.repo)).id
+      const reqCheckoutB = { commandId: 'git.checkout.b', params: { branch: 'feature/checkout-test' }, workspaceId }
+      const prevCheckoutB = await f.commands.preview(reqCheckoutB)
+      const resB = await f.commands.execute(reqCheckoutB, prevCheckoutB.confirmationToken)
+      await finished(f.runner, resB.executionId)
+      expect(f.git(['branch', '--show-current'])).toBe('feature/checkout-test')
+
+      const reqCheckoutBranch = { commandId: 'git.checkout.branch', params: { branch: 'main' }, workspaceId }
+      const prevCheckoutBranch = await f.commands.preview(reqCheckoutBranch)
+      const resBranch = await f.commands.execute(reqCheckoutBranch, prevCheckoutBranch.confirmationToken)
+      await finished(f.runner, resBranch.executionId)
+      expect(f.git(['branch', '--show-current'])).toBe('main')
+
+      writeFileSync(join(f.repo, 'tracked.txt'), 'modified content\n')
+      expect(f.git(['diff'])).toContain('modified content')
+      const reqCheckoutFile = { commandId: 'git.checkout.file', params: { path: 'tracked.txt' }, workspaceId }
+      const prevCheckoutFile = await f.commands.preview(reqCheckoutFile)
+      const resFile = await f.commands.execute(reqCheckoutFile, prevCheckoutFile.confirmationToken)
+      await finished(f.runner, resFile.executionId)
+      expect(f.git(['diff'])).toBe('')
+
+      const searchResults = f.commands.search({ query: 'checkout', category: 'all', risk: 'all', platform: 'all', favoritesOnly: false })
+      expect(searchResults.some((c) => c.id === 'git.checkout.branch')).toBe(true)
+      expect(searchResults.some((c) => c.id === 'git.checkout.b')).toBe(true)
+    } finally { await f.close() }
+  })
 })
 
 it('clears saved history without cancelling active runs or restoring cleared entries on completion', async () => {

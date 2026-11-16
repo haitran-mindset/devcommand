@@ -1,6 +1,6 @@
 import { GitConfigPanel } from './GitConfigPanel'
 import { SelectField } from '../../components/ui/select-field'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Archive, ArrowDownToLine, ArrowUpFromLine, GitFork, Link2, Network, Trash2, ArrowRight, ChevronLeft, ChevronRight, Clock3, GitCommitHorizontal, UserRound, CheckCircle2, FileCode2, FileDiff, Files, GitBranch, GitCompareArrows, Minus, Pencil, Plus, RefreshCw, ShieldCheck } from 'lucide-react'
@@ -47,7 +47,7 @@ function GitRepository({ workspaceId, route }: { workspaceId?: string; route: st
       {snapshot.isError && <div role="alert" className="git-error"><p>{snapshot.error.message}</p><Button variant="outline" onClick={() => void snapshot.refetch()}>Retry Git read</Button></div>}
       {commands.isError && <p role="alert" className="terminal-error">The command library is unavailable. Read-only data remains visible. <Button variant="outline" size="sm" onClick={() => void commands.refetch()}>Retry command library</Button></p>}
       {snapshot.data && <>{snapshot.data.warnings.map((warning) => <p key={warning} className="git-notice" role={snapshot.data.status.conflicts ? 'alert' : 'status'}>{warning}</p>)}
-        {form && <OperationForm key={JSON.stringify(form)} operation={form} command={commands.data?.find((entry) => entry.id === form.commandId)} onCancel={() => setForm(null)} onReview={(params) => { setAction({ ...form, params }); setForm(null) }} />}
+        {form && <OperationFormModal key={JSON.stringify(form)} operation={form} command={commands.data?.find((entry) => entry.id === form.commandId)} onCancel={() => setForm(null)} onReview={(params) => { setAction({ ...form, params }); setForm(null) }} />}
         {tab === 'overview' && <Overview data={snapshot.data} viewDiff={setDiff} run={run} />}
         {tab === 'config' && <GitConfigPanel entries={snapshot.data.config} onEdit={(key, scope) => create('git.config.set', `Edit ${scope === 'global' ? 'global ' : ''}${key}`, { key, scope, value: '' })} />}
         {tab === 'remotes' && <section className="git-collection"><div className="git-toolbar"><div className="git-collection-heading"><h2>Configured remotes</h2><p>Repository addresses used for fetching and pushing.</p></div><Button size="sm" onClick={() => create('git.remote.add', 'Add remote')}><Plus className="size-3.5" />Add remote</Button></div>{snapshot.data.status.remotes.length === 0 && <p className="git-empty git-collection-empty">No remote configured. Add a credential-free HTTPS or SSH address.</p>}{snapshot.data.status.remotes.map((remote) => <article className="git-collection-row" key={remote.name}><Network className="git-collection-icon" aria-hidden="true" /><div className="git-collection-info"><h3>{remote.name}</h3><dl className="git-remote-urls"><div><dt>Fetch</dt><dd title={remote.fetchUrl}>{remote.fetchUrl}</dd></div><div><dt>Push</dt><dd title={remote.pushUrl}>{remote.pushUrl}</dd></div></dl></div><div className="git-collection-actions"><Button aria-label={`Change URL ${remote.name}`} title="Change URL" size="icon-sm" variant="ghost" onClick={() => create('git.remote.set-url', `Change remote ${remote.name}`, { name: remote.name, url: remote.fetchUrl })}><Link2 className="size-3.5" /></Button><Button aria-label={`Rename remote ${remote.name}`} title="Rename remote" size="icon-sm" variant="ghost" onClick={() => create('git.remote.rename', `Rename remote ${remote.name}`, { name: remote.name })}><Pencil className="size-3.5" /></Button><Button aria-label={`Remove remote ${remote.name}`} title="Remove remote" size="icon-sm" variant="ghost" onClick={() => run('git.remote.remove', `Remove remote ${remote.name}`, { name: remote.name })}><Trash2 className="size-3.5" /></Button></div></article>)}</section>}
@@ -93,6 +93,30 @@ function Overview({ data, viewDiff, run }: { data: GitSnapshot; viewDiff: (selec
   </div>
 }
 
+function OperationFormModal({ operation, command, onCancel, onReview }: { operation: Operation; command?: CommandSummary; onCancel: () => void; onReview: (params: Record<string, string>) => void }) {
+  const ref = useRef<HTMLDialogElement>(null)
+  useEffect(() => {
+    const dialog = ref.current
+    if (!dialog) return
+    dialog.showModal()
+    const onClose = () => onCancel()
+    dialog.addEventListener('close', onClose)
+    return () => dialog.removeEventListener('close', onClose)
+  }, [onCancel])
+  const handleBackdrop = (event: React.MouseEvent<HTMLDialogElement>) => {
+    const rect = ref.current?.getBoundingClientRect()
+    if (!rect) return
+    if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) {
+      ref.current?.close()
+    }
+  }
+  return (
+    <dialog ref={ref} className="operation-form-dialog" onClick={handleBackdrop}>
+      <OperationForm operation={operation} command={command} onCancel={() => ref.current?.close()} onReview={onReview} />
+    </dialog>
+  )
+}
+
 function OperationForm({ operation, command, onCancel, onReview }: { operation: Operation; command?: CommandSummary; onCancel: () => void; onReview: (params: Record<string, string>) => void }) {
   const [params, setParams] = useState<Record<string, string>>(() => ({ ...operation.params }))
   const isConfig = operation.commandId.startsWith('git.config.')
@@ -103,7 +127,7 @@ function OperationForm({ operation, command, onCancel, onReview }: { operation: 
     {isConfig ? <header className="git-config-form-header"><span className="git-config-form-icon"><Pencil /></span><div><h2>Edit Git configuration</h2><p>{scope === 'global' ? 'Applies to all repositories for your user.' : 'Applies to this repository only.'}</p></div><span className="git-config-form-scope">{scope === 'global' ? 'Global' : 'Local'}</span></header> : <h2>{operation.title}</h2>}
     <div className="fields">{command.parameters.map((parameter) => <label key={parameter.key} data-field={parameter.key} htmlFor={`git-param-${parameter.key}`}>{parameter.label}{parameter.options ? <SelectField label={parameter.label} required={parameter.required} id={`git-param-${parameter.key}`} value={params[parameter.key] ?? parameter.defaultValue ?? ''} onValueChange={(value) => setParams({ ...params, [parameter.key]: value })} options={isConfig && parameter.key === 'scope' ? parameter.options.map((value) => ({ value, label: value === 'global' ? 'Global' : 'Local' })) : parameter.options} className="w-full" /> : <input id={`git-param-${parameter.key}`} required={parameter.required} type={parameter.sensitive ? 'password' : 'text'} placeholder={isConfig && parameter.key === 'value' ? 'Enter a new value' : undefined} maxLength={2048} autoComplete="off" value={params[parameter.key] ?? parameter.defaultValue ?? ''} onChange={(event) => setParams({ ...params, [parameter.key]: event.target.value })} />}</label>)}</div>
     {isConfig && <p className="git-config-form-note"><ShieldCheck />Review the command before applying your changes.</p>}
-    <div className="git-row-actions"><Button type="button" variant="outline" size={isConfig ? 'sm' : 'default'} onClick={onCancel}>Cancel form</Button><Button type="submit" size={isConfig ? 'sm' : 'default'}>Review operation{isConfig && <ArrowRight />}</Button></div>
+    <div className="git-row-actions"><Button type="button" variant="outline" size={isConfig ? 'sm' : 'default'} onClick={onCancel}>Cancel</Button><Button type="submit" size={isConfig ? 'sm' : 'default'}>Review{isConfig && <ArrowRight />}</Button></div>
   </form>
 }
 function DiffView({ workspaceId, selection, close }: { workspaceId: string; selection: DiffSelection; close: () => void }) {

@@ -154,8 +154,10 @@ kbd { border: 1px solid var(--input); background: var(--secondary); color: var(-
 .related-list button { display: flex; align-items: center; gap: 10px; padding: 13px; border: 1px solid var(--border); border-radius: 9px; background: var(--muted); text-align: left; }
 .related-list button > svg:last-child { margin-left: auto; }
 .terminal-dock { position: relative; flex-shrink: 0; min-height: 140px; max-height: 44vh; overflow: visible; display: flex; flex-direction: column; }
-.resize-handle { position: absolute; top: -7px; height: 10px; width: 100%; cursor: row-resize; touch-action: none; }
-.resize-handle:hover:after { content: ''; position: absolute; height: 2px; top: 5px; left: 30%; right: 30%; background: var(--purple); }
+.resize-handle { position: absolute; top: -10px; height: 20px; width: 100%; cursor: row-resize; touch-action: none; display: flex; align-items: center; justify-content: center; }
+.resize-handle:before { content: ''; width: 44px; height: 4px; border-radius: 99px; background: color-mix(in srgb, var(--muted-foreground) 20%, transparent); border: 1px solid color-mix(in srgb, var(--border) 60%, transparent); transition: width 180ms cubic-bezier(.4,0,.2,1), background 180ms ease, border-color 180ms ease, box-shadow 180ms ease; }
+.resize-handle:hover:before { width: 56px; background: color-mix(in srgb, var(--purple) 70%, transparent); border-color: color-mix(in srgb, var(--purple) 50%, transparent); box-shadow: 0 0 10px color-mix(in srgb, var(--purple) 30%, transparent); }
+.resize-handle:active:before { width: 64px; background: var(--purple); border-color: var(--purple); box-shadow: 0 0 16px color-mix(in srgb, var(--purple) 50%, transparent); }
 .terminal-header { display: flex; align-items: center; gap: 10px; padding: 9px 16px; border-bottom: 1px solid var(--border); }
 .terminal-header h2 { font-size: 14px; }
 .terminal-badge { margin-left: auto; font-size: 10px; padding: 4px 9px; background: var(--muted); border-radius: 18px; color: var(--muted-foreground); }
@@ -175,16 +177,22 @@ kbd { border: 1px solid var(--input); background: var(--secondary); color: var(-
 .page-heading { display: flex; align-items: center; gap: 16px; padding-bottom: 18px; }
 .page-heading > svg { color: var(--purple); width: 26px; height: 26px; }
 .page-heading p { margin-top: 5px; }
-.setting-section { padding: 19px 0; border-top: 1px solid var(--border); }
-.setting-section > p { font-size: 12px; margin-top: 5px; }
+.setting-section { padding: 20px; border: 1px solid var(--border); border-radius: 12px; margin-top: 14px; background: color-mix(in srgb, var(--card) 80%, var(--muted)); }
+.setting-section > h2 { font-size: 13px; font-weight: 600; margin-bottom: 12px; }
+.setting-section > p { font-size: 12px; margin-top: -6px; margin-bottom: 14px; }
 .theme-options { display: flex; gap: 10px; margin-top: 14px; }
-.theme-choice { display: flex; align-items: center; gap: 10px; min-width: 114px; padding: 13px; border: 1px solid var(--border); background: var(--muted); border-radius: 9px; }
-.theme-choice.chosen { background: var(--accent); border-color: var(--purple); }
+.theme-choice { display: flex; align-items: center; gap: 10px; min-width: 114px; padding: 13px; border: 1px solid var(--border); background: var(--muted); border-radius: 9px; transition: border-color 150ms ease, background 150ms ease; }
+.theme-choice.chosen { background: var(--accent); border-color: color-mix(in srgb, var(--purple) 60%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--purple) 30%, transparent); }
 .theme-choice > svg:last-child:not(:first-child) { width: 12px; margin-left: auto; color: var(--purple); }
-.checkbox-row, .shortcut-row { display: flex; justify-content: space-between; align-items: center; margin-top: 13px; font-size: 12px; }
-.checkbox-row input { accent-color: var(--primary); width: 15px; height: 15px; }
-.privacy-note { display: flex; align-items: center; gap: 7px; color: var(--success); font-size: 11px; }
-.privacy-note svg { width: 14px; }
+.checkbox-row { display: flex; justify-content: space-between; align-items: center; padding: 11px 13px; font-size: 12.5px; background: color-mix(in srgb, var(--muted) 60%, transparent); border-radius: 8px; margin-top: 8px; border: 1px solid color-mix(in srgb, var(--border) 70%, transparent); cursor: pointer; }
+.checkbox-row input[type=checkbox] { appearance: none; -webkit-appearance: none; width: 32px; height: 18px; border-radius: 99px; border: 1.5px solid var(--input); background: var(--muted); cursor: pointer; position: relative; transition: background 180ms ease, border-color 180ms ease; flex-shrink: 0; }
+.checkbox-row input[type=checkbox]:checked { background: var(--purple); border-color: var(--purple); }
+.checkbox-row input[type=checkbox]:after { content: ''; position: absolute; width: 12px; height: 12px; border-radius: 50%; background: white; top: 2px; left: 2px; transition: transform 180ms cubic-bezier(.4,0,.2,1); box-shadow: 0 1px 3px #0004; }
+.checkbox-row input[type=checkbox]:checked:after { transform: translateX(14px); }
+.shortcut-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; font-size: 12.5px; }
+.shortcut-row + .shortcut-row { border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent); }
+.privacy-note { display: flex; align-items: center; gap: 9px; color: var(--success); font-size: 11.5px; margin-top: 16px; padding: 10px 14px; background: color-mix(in srgb, var(--success) 8%, transparent); border: 1px solid color-mix(in srgb, var(--success) 22%, transparent); border-radius: 8px; }
+.privacy-note svg { width: 14px; flex-shrink: 0; }
 .welcome-page, .module-page { padding: 32px; min-height: 100%; }
 .welcome-icon { width: 44px; height: 44px; margin-bottom: 18px; }
 .welcome-page > h1 { font-size: 31px; margin-top: 14px; }
@@ -402,6 +410,11 @@ dialog.command-palette::backdrop { background: color-mix(in srgb, var(--backgrou
 .git-item { display: flex; align-items: center; gap: 14px; padding: 11px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; }.git-item > div:first-child { flex: 1; min-width: 175px; }.git-item h3 { font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }.git-item p, .git-item small { font-size: 10px; margin-top: 5px; color: var(--muted-foreground); overflow-wrap: anywhere; }.git-file-path { white-space: pre-wrap; }.git-row-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }.git-row-actions button { font-size: 10px; }.git-row-actions > span { font-size: 10px; color: var(--muted-foreground); }.git-chip { font-size: 10px; font-weight: 500; padding: 2px 7px; border: 1px solid var(--border); background: var(--accent); color: var(--purple); border-radius: 5px; margin-left: 9px; }.git-empty { font-size: 12px; padding: 21px 0; }
 .git-table-wrap { width: 100%; overflow-x: auto; }.git-table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: left; }.git-table th, .git-table td { padding: 10px 9px; border-bottom: 1px solid var(--border); vertical-align: top; max-width: 245px; overflow-wrap: anywhere; }.git-table thead th { color: var(--muted-foreground); font-weight: 500; }.git-table tbody th { font-weight: 500; }.git-table small { display: block; color: var(--muted-foreground); font-size: 10px; margin-top: 5px; }
 .git-operation-form { padding: 15px; border: 1px solid var(--input); background: var(--code); border-radius: 9px; margin-bottom: 18px; }.git-operation-form h2 { margin-bottom: 13px; }.git-operation-form .fields { max-width: 542px; }.git-operation-form .git-row-actions { margin-top: 14px; }.git-diff { border: 1px solid var(--border); border-radius: 9px; margin-top: 18px; background: var(--code); overflow: hidden; }.git-diff .git-toolbar { padding: 10px 12px; border-bottom: 1px solid var(--border); margin: 0; }.git-diff .git-help { padding: 10px 12px; margin: 0; }.git-diff pre { font: 11px/1.65 'SFMono-Regular', Consolas, monospace; white-space: pre; overflow: auto; max-height: 332px; padding: 13px; margin: 0; }.git-action-dialog .execution-output { max-height: 192px; }.confirmation-target { overflow-wrap: anywhere; }
+dialog.operation-form-dialog { width: min(620px, 92vw); padding: 0; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; box-shadow: 0 24px 90px #0009, 0 0 0 1px color-mix(in srgb, var(--input) 30%, transparent); }
+dialog.operation-form-dialog::backdrop { background: color-mix(in srgb, var(--background) 60%, transparent); backdrop-filter: blur(4px); }
+dialog.operation-form-dialog .git-operation-form { margin-bottom: 0; border: none; border-radius: 0; background: var(--card); padding: 22px 24px; }
+dialog.operation-form-dialog .git-operation-form .fields { max-width: 100%; }
+dialog.operation-form-dialog .git-row-actions { padding: 14px 24px; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--muted) 40%, var(--card)); justify-content: flex-end; margin-top: 0; }
 @media (max-width: 1050px) { .git-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }.git-summary > div:nth-child(3) { border-left: 0; border-top: 1px solid var(--border); }.git-summary > div:nth-child(4) { border-top: 1px solid var(--border); }.git-tabs > button { padding-inline: 10px; }.git-content { padding-inline: 14px; } }
 @media (max-width: 740px) { .git-heading { padding: 14px; flex-wrap: wrap; }.git-heading h1 { font-size: 18px; }.git-tabs { padding-inline: 7px; }.git-content { padding-inline: 10px; }.git-item > div:first-child { min-width: 0; flex-basis: 100%; }.git-summary strong { font-size: 11px; } }
 /* Extended CLI managers share the existing panel and form tokens. */

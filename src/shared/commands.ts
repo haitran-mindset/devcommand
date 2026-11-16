@@ -32,6 +32,7 @@ export interface WorkspaceAPI {
     list(): Promise<ApiResult<{ entries: Workspace[]; selectedId: string | null }>>
     addDirectory(): Promise<ApiResult<Workspace | null>>
     select(id: string): Promise<ApiResult<null>>
+    deselect(): Promise<ApiResult<null>>
     remove(id: string): Promise<ApiResult<null>>
     favorite(id: string, favorite: boolean): Promise<ApiResult<null>>
     status(id: string): Promise<ApiResult<RepositoryStatus>>

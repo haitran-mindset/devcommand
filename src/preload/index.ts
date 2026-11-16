@@ -47,6 +47,7 @@ const api: DevCommandAPI = {
     list: () => ipcRenderer.invoke('workspace:list'),
     addDirectory: () => ipcRenderer.invoke('workspace:add'),
     select: (id) => ipcRenderer.invoke('workspace:select', id),
+    deselect: () => ipcRenderer.invoke('workspace:deselect'),
     remove: (id) => ipcRenderer.invoke('workspace:remove', id),
     favorite: (id, favorite) => ipcRenderer.invoke('workspace:favorite', { id, favorite }),
     status: (id) => ipcRenderer.invoke('workspace:status', id)

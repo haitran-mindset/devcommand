@@ -63,6 +63,7 @@ export function openSettingsStore(path: string) {
       db.insert(appSettings).values({ key: 'active-workspace', value: id }).onConflictDoUpdate({ target: appSettings.key, set: { value: id } }).run()
       db.update(workspaces).set({ lastOpenedAt: new Date().toISOString() }).where(eq(workspaces.id, id)).run()
     }
+    const deselectWorkspace = () => db.delete(appSettings).where(eq(appSettings.key, 'active-workspace')).run()
     const addWorkspace = (rootPath: string): Workspace => {
       const existing = listWorkspaces().find((workspace) => workspace.rootPath === rootPath)
       if (existing) { selectWorkspace(existing.id); return existing }
@@ -177,7 +178,7 @@ export function openSettingsStore(path: string) {
     })()
     // Recover interrupted runs after a crash without pretending they completed.
     for (const entry of history()) if (entry.execution.status === 'running') saveHistory({ ...entry, execution: { ...entry.execution, status: 'cancelled', finishedAt: new Date().toISOString(), error: 'Application closed before completion.' } })
-    return { renameSavedCommandTag, clearSavedCommands, moveSavedCommand, listSavedCommands, saveSavedCommand, removeSavedCommand, tagSavedCommands, requireSavedCommand, get, update, listWorkspaces, selectedWorkspace, selectWorkspace, addWorkspace, removeWorkspace, favoriteWorkspace, favorites, favoriteOrder, setFavoriteOrder, favoriteCommand, history, clearHistory, saveHistory, close: () => sqlite.close() }
+    return { renameSavedCommandTag, clearSavedCommands, moveSavedCommand, listSavedCommands, saveSavedCommand, removeSavedCommand, tagSavedCommands, requireSavedCommand, get, update, listWorkspaces, selectedWorkspace, selectWorkspace, deselectWorkspace, addWorkspace, removeWorkspace, favoriteWorkspace, favorites, favoriteOrder, setFavoriteOrder, favoriteCommand, history, clearHistory, saveHistory, close: () => sqlite.close() }
   } catch (error) {
     sqlite.close()
     throw error

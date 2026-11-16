@@ -19,7 +19,7 @@ const families: Family[] = [
   { id: 'system.information', title: 'System Information', description: 'Inspect the current user, hostname, operating system, uptime and date', ids: ['system.whoami', 'system.hostname', 'system.uname', 'system.uptime', 'system.date'], defaultId: 'system.whoami' },
   { id: 'system.tool-versions', title: 'Tool Versions', description: 'Check installed Python and Docker CLI versions', ids: ['python.version', 'docker.version'], defaultId: 'python.version' },
   { id: 'compare', title: 'File Comparison', description: 'Compare text files or bytes without modifying either file', prefix: 'compare.', defaultId: 'compare.unified' },
-  { id: 'files', title: 'File Operations', description: 'Create, copy, move, rename and remove files', prefix: 'files.', defaultId: 'files.create' },
+  { id: 'files', title: 'File Operations', description: 'Create, copy, move, rename and remove files and directories', prefix: 'files.', defaultId: 'files.create' },
   { id: 'find', title: 'Find', description: 'Search files and directories by name, size or modification time', prefix: 'find.', defaultId: 'find.name' },
   { id: 'zsh', title: 'Zsh', description: 'Open shells, inspect defaults and check startup syntax', prefix: 'zsh.', defaultId: 'zsh.start' },
   { id: 'ngrok', title: 'ngrok', description: 'Publish local services and run configured endpoints', prefix: 'ngrok.', defaultId: 'ngrok.http' },
@@ -27,6 +27,7 @@ const families: Family[] = [
   { id: 'git.remotes', title: 'Git Remotes', description: 'View, add and update remote repositories', prefix: 'git.remote.', defaultId: 'git.remote.set-url' },
   { id: 'git.config', title: 'Git Config', description: 'Read and update Git configuration', prefix: 'git.config.', defaultId: 'git.config.list' },
   { id: 'git.branches', title: 'Git Branches', description: 'Create, switch and manage branches', prefix: 'git.branch.', defaultId: 'git.branch.list' },
+  { id: 'git.checkout', title: 'Git Checkout', description: 'Checkout branches, new branches, commits and files', prefix: 'git.checkout.', defaultId: 'git.checkout.branch' },
   { id: 'git.changes', title: 'Git Changes', description: 'Inspect, stage and restore working files', ids: ['git.status', 'git.diff', 'git.stage', 'git.unstage', 'git.restore'], defaultId: 'git.status' },
   { id: 'git.sync', title: 'Git Sync', description: 'Fetch, pull and push repository changes', ids: ['git.fetch', 'git.pull', 'git.push'], defaultId: 'git.fetch' },
   { id: 'git.history', title: 'Git History', description: 'Inspect commits and reset changes', ids: ['git.log', 'git.reset.soft', 'git.reset.mixed', 'git.reset.hard'], defaultId: 'git.log' },
@@ -68,13 +69,14 @@ const labels: Record<string, string> = {
   'git.remote.set-url': 'Change URL', 'git.remote.add': 'Add remote', 'git.remote.remove': 'Remove remote', 'git.remote.list': 'List remotes', 'git.remote.rename': 'Rename remote',
   'git.config.list': 'List config', 'git.config.get': 'Get value', 'git.config.set': 'Set value',
   'git.branch.list': 'List branches', 'git.branch.create': 'Create branch', 'git.branch.switch': 'Switch branch', 'git.branch.delete': 'Delete branch', 'git.branch.rename': 'Rename branch',
+  'git.checkout.branch': 'Checkout branch', 'git.checkout.b': 'Checkout new branch (-b)', 'git.checkout.commit': 'Checkout commit', 'git.checkout.file': 'Checkout file',
   'git.status': 'Status', 'git.diff': 'Diff', 'git.stage': 'Stage file', 'git.unstage': 'Unstage file', 'git.restore': 'Restore tracked files',
   'git.fetch': 'Fetch', 'git.pull': 'Pull', 'git.push': 'Push', 'git.log': 'Commit log', 'git.reset.soft': 'Reset soft', 'git.reset.mixed': 'Reset mixed', 'git.reset.hard': 'Reset hard',
   'git.stash.list': 'List stashes', 'git.stash.push': 'Save tracked changes', 'git.stash.apply': 'Apply stash', 'git.stash.pop': 'Pop stash', 'git.stash.drop': 'Drop stash',
   'ssh.github.test': 'Test GitHub connection', 'ssh.key.list': 'List key files', 'ssh.agent.start': 'Add key to new agent',
   'ssh.connect': 'Connect', 'ssh.test': 'Test authentication', 'ssh.version': 'Version', 'ssh.help': 'Help', 'ssh.key.generate': 'Generate key', 'ssh.key.fingerprint': 'Show fingerprint', 'ssh.agent.list': 'List identities', 'ssh.agent.public': 'List public keys', 'ssh.agent.add': 'Load key into agent', 'ssh.agent.remove': 'Remove key from agent', 'ssh.agent.clear': 'Remove all keys',
   'node.version': 'Version', 'node.runtime': 'Runtime details', 'npm.version': 'Version', 'npm.dependencies': 'Dependencies', 'flutter.version': 'Version', 'flutter.doctor': 'Doctor', 'flutter.devices': 'Devices',
-  'files.create': 'Create file', 'files.mkdir': 'Create directory', 'files.copy': 'Copy file', 'files.move': 'Move file', 'files.rename': 'Rename file', 'files.delete': 'Delete file', 'files.rmdir': 'Remove empty directory',
+  'files.create': 'Create file', 'files.mkdir': 'Create directory', 'files.mkdir.parents': 'Create nested directory', 'files.copy': 'Copy file', 'files.dir.copy': 'Copy directory', 'files.move': 'Move file', 'files.dir.move': 'Move directory', 'files.rename': 'Rename file', 'files.dir.rename': 'Rename directory', 'files.delete': 'Delete file', 'files.rmdir': 'Remove empty directory',
   'find.name': 'By name', 'find.iname': 'By name (ignore case)', 'find.extension': 'By extension', 'find.directory': 'Directories', 'find.empty': 'Empty files or directories', 'find.size': 'Large files', 'find.modified': 'Recently modified',
   'system.whoami': 'Current user', 'system.hostname': 'Hostname', 'system.uname': 'Operating system', 'system.uptime': 'Uptime', 'system.date': 'Date and time', 'python.version': 'Python version', 'docker.version': 'Docker CLI version',
   'system.pwd': 'Working directory', 'system.list': 'List files', 'system.disk': 'Disk usage', 'system.ports': 'All TCP listeners', 'system.port': 'Inspect listening port', 'system.port.process': 'Find process', 'system.port.stop': 'Stop process',
@@ -90,7 +92,10 @@ export function sharedActionParams(current: CommandSummary, next: CommandSummary
   for (const parameter of next.parameters) {
     const previous = current.parameters.find((candidate) => candidate.key === parameter.key && !candidate.sensitive)
     const value = params[parameter.key]
-    if (previous && !parameter.sensitive && typeof value === 'string' && (!parameter.options || parameter.options.includes(value))) shared[parameter.key] = value
+    if (previous && !parameter.sensitive && typeof value === 'string' && (!parameter.options || parameter.options.includes(value))) {
+      if (value === previous.defaultValue && parameter.defaultValue !== undefined && parameter.defaultValue !== previous.defaultValue) continue
+      shared[parameter.key] = value
+    }
   }
   return shared
 }

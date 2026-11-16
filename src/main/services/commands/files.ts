@@ -6,7 +6,7 @@ import { PublicError } from '../../security/errors'
 export function fileOperation(root: string, commandId: string, params: Record<string, string>) {
   const base = realpathSync(root)
   const fingerprints: string[] = []
-  function inspect(input: string, mustExist: boolean, directory = false): string {
+  function inspect(input: string, mustExist: boolean, directory = false, allowMissingParents = false): string {
     if (!input || isAbsolute(input) || input.includes('\\') || /^[A-Za-z]:/.test(input) || hasControlCharacters(input) || input.split('/').some((part) => !part || part === '.' || part === '..' || part.toLowerCase() === '.git')) throw new PublicError('Use a relative path inside the repository, without traversal, symbolic links or .git metadata.')
     const target = resolve(base, input)
     const parts = relative(base, target).split(sep)
@@ -17,11 +17,21 @@ export function fileOperation(root: string, commandId: string, params: Record<st
       let stat: ReturnType<typeof lstatSync>
       try { stat = lstatSync(current) }
       catch (error) {
-        if (last && !mustExist && (error as NodeJS.ErrnoException).code === 'ENOENT') {
-          fingerprints.push(current + ':missing')
-          const parent = lstatSync(resolve(current, '..'), { bigint: true })
-          fingerprints.push([parent.dev, parent.ino, parent.mode, parent.mtimeNs, parent.ctimeNs].map(String).join(':'))
-          return target
+        if (!mustExist && (error as NodeJS.ErrnoException).code === 'ENOENT') {
+          if (last || allowMissingParents) {
+            fingerprints.push(current + ':missing')
+            let ancestor = resolve(current, '..')
+            while (ancestor.startsWith(base)) {
+              try {
+                const parent = lstatSync(ancestor, { bigint: true })
+                fingerprints.push([parent.dev, parent.ino, parent.mode, parent.mtimeNs, parent.ctimeNs].map(String).join(':'))
+                break
+              } catch {
+                ancestor = resolve(ancestor, '..')
+              }
+            }
+            return target
+          }
         }
         throw new PublicError('The path or its parent directory is unavailable. Create parent directories first.')
       }
@@ -46,6 +56,12 @@ export function fileOperation(root: string, commandId: string, params: Record<st
       consequences = [`Creates ${target}. Parent directories must already exist. Existing paths are refused during validation.`]
       break
     }
+    case 'files.mkdir.parents': {
+      const target = inspect(params.targetPath, false, true, true)
+      argv = ['-p', target]
+      consequences = [`Creates ${target} and any missing parent directories.`]
+      break
+    }
     case 'files.copy':
     case 'files.move':
     case 'files.rename': {
@@ -53,6 +69,23 @@ export function fileOperation(root: string, commandId: string, params: Record<st
       const destination = inspect(params.destinationPath, false)
       argv = ['-n', source, destination]
       consequences = [`Source: ${source}`, `Destination: ${destination}`, commandId === 'files.copy' ? 'Copies one regular file; the source stays unchanged. Existing destinations are refused during validation.' : 'Moves or renames one regular file. Existing destinations are refused during validation. Use the full destination filename.']
+      break
+    }
+    case 'files.dir.copy': {
+      const source = inspect(params.sourcePath, true, true)
+      const destination = inspect(params.destinationPath, false)
+      if (destination === source || destination.startsWith(source + sep)) throw new PublicError('The destination cannot be inside the source directory.')
+      argv = ['-R', '-n', source, destination]
+      consequences = [`Source directory: ${source}`, `Destination: ${destination}`, 'Copies directory and all its contents recursively. The source stays unchanged. Existing destinations are refused during validation.']
+      break
+    }
+    case 'files.dir.move':
+    case 'files.dir.rename': {
+      const source = inspect(params.sourcePath, true, true)
+      const destination = inspect(params.destinationPath, false)
+      if (destination === source || destination.startsWith(source + sep)) throw new PublicError('The destination cannot be inside the source directory.')
+      argv = ['-n', source, destination]
+      consequences = [`Source directory: ${source}`, `Destination: ${destination}`, commandId === 'files.dir.move' ? 'Moves directory to new destination. Existing destinations are refused during validation.' : 'Renames directory. Existing destinations are refused during validation.']
       break
     }
     case 'files.delete':
