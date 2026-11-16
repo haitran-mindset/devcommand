@@ -93,7 +93,7 @@ describe('SSH confirmed actions', () => {
     await expect(service.publicKey('id_one')).rejects.toThrow('public .pub')
     const action = { kind: 'agent.add' as const, publicKeyName: 'id_one.pub', fingerprint: snapshot.keys[0].fingerprint }, f = execution(), preview = await service.preview(action)
     await service.execute(action, preview.token, f.terminals, f.runner)
-    expect((f.startProgram.mock.calls[0] as unknown as [{ argv: string[] }])[0].argv).toEqual(['-t', '3600', join(dir, 'id_one')])
+    expect((f.startProgram.mock.calls[0] as unknown as [{ argv: string[] }])[0].argv).toEqual([join(dir, 'id_one')])
   })
   it('updates key comment in place without regenerating keys and rejects unsafe comments', async () => {
     const dir = directory(); writeFileSync(join(dir, 'id_one'), 'PRIVATE SECRET SENTINEL', { mode: 0o600 }); writeFileSync(join(dir, 'id_one.pub'), 'ssh-ed25519 AAAAFixture public comment\n')
@@ -105,6 +105,24 @@ describe('SSH confirmed actions', () => {
     await service.execute(action, preview.token, f.terminals, f.runner)
     expect((f.startProgram.mock.calls[0] as unknown as [{ argv: string[] }])[0].argv).toEqual(['-c', '-C', 'new@example.com', '-f', join(dir, 'id_one')])
     await expect(service.preview({ ...action, comment: 'ghp_secretTokenValue123' })).rejects.toThrow('credentials or tokens')
+  })
+  it('deletes both public and private key files permanently from machine and unloads from agent', async () => {
+    const dir = directory()
+    writeFileSync(join(dir, 'id_del'), 'PRIVATE KEY CONTENT', { mode: 0o600 })
+    writeFileSync(join(dir, 'id_del.pub'), 'ssh-ed25519 AAAAFixture public comment\n')
+    const service = new SshService(probe, dir)
+    const snapshot = await service.snapshot()
+    const action = { kind: 'key.delete' as const, publicKeyName: 'id_del.pub', fingerprint: snapshot.keys[0].fingerprint }
+    const f = execution()
+    const preview = await service.preview(action)
+    expect(preview.display).toContain('rm')
+    expect(preview.display).toContain('id_del')
+    expect(preview.consequences.join(' ')).toContain('Permanently deletes')
+    const result = await service.execute(action, preview.token, f.terminals, f.runner)
+    expect(result).toEqual({ kind: 'deleted' })
+    expect(existsSync(join(dir, 'id_del'))).toBe(false)
+    expect(existsSync(join(dir, 'id_del.pub'))).toBe(false)
+    await expect(service.preview(action)).rejects.toThrow()
   })
   it('bypasses executable SSH config, quotes paths with spaces and enforces strict checking without prompting', async () => {
     const dir = directory(); writeFileSync(join(dir, 'config'), 'Host work\n HostName git.example.invalid\n User git\n ProxyCommand sh -c evil\n LocalCommand evil\n')

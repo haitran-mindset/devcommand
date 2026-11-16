@@ -85,7 +85,7 @@ export class CommandService {
       const action = await this.sshAction(request)
       const preview = await this.ssh!.preview(action)
       const path = params.keyName ? join(this.ssh!.directory, params.keyName) : this.ssh!.directory
-      const argv = action.kind === 'key.generate' ? keyGenerationArguments(action.keyType ?? 'ed25519', action.comment, path) : action.kind === 'key.comment' ? ['-c', '-C', action.comment, '-f', path] : action.kind === 'agent.add' ? (action.lifetimeSeconds === 'unlimited' ? [path] : ['-t', action.lifetimeSeconds ?? '3600', path]) : action.kind === 'agent.remove' ? ['-d', join(this.ssh!.directory, action.publicKeyName)] : ['-D']
+      const argv = action.kind === 'key.generate' ? keyGenerationArguments(action.keyType ?? 'ed25519', action.comment, path) : action.kind === 'key.comment' ? ['-c', '-C', action.comment, '-f', path] : action.kind === 'agent.add' ? (!action.lifetimeSeconds || action.lifetimeSeconds === 'unlimited' ? [path] : ['-t', action.lifetimeSeconds, path]) : action.kind === 'agent.remove' ? ['-d', join(this.ssh!.directory, action.publicKeyName)] : ['-D']
       return { definition, request, process: { commandId: definition.id, executable, argv, cwd: action.kind === 'agent.clear' ? homedir() : this.ssh!.directory, preview: preview.display }, preview: { display: preview.display, cwd: action.kind === 'agent.clear' ? homedir() : this.ssh!.directory, risk: definition.risk, consequences: preview.consequences }, binding: '', ssh: { action, token: preview.token, expiresAt: preview.expiresAt } }
     }
     let initialCommand: string | undefined
@@ -335,7 +335,7 @@ export class CommandService {
     const snapshot = await this.ssh.snapshot()
     const key = snapshot.keys.find((key) => key.name === params.keyName + '.pub')
     if (!key) throw new PublicError('This public key is unavailable. Refresh SSH Manager and check the key basename.')
-    return request.commandId === 'ssh.agent.remove' ? { kind: 'agent.remove', publicKeyName: key.name, fingerprint: key.fingerprint } : { kind: 'agent.add', publicKeyName: key.name, fingerprint: key.fingerprint, lifetimeSeconds: params.lifetimeSeconds as SshAgentLifetime }
+    return request.commandId === 'ssh.agent.remove' ? { kind: 'agent.remove', publicKeyName: key.name, fingerprint: key.fingerprint } : { kind: 'agent.add', publicKeyName: key.name, fingerprint: key.fingerprint, lifetimeSeconds: (params.lifetimeSeconds as SshAgentLifetime) ?? 'unlimited' }
   }
   async launch(request: CommandRequest, token: string, terminals: TerminalManager) {
     if (request.commandId === 'ssh.key.generate' || request.commandId === 'ssh.key.comment' || ['ssh.agent.add', 'ssh.agent.remove', 'ssh.agent.clear'].includes(request.commandId)) {

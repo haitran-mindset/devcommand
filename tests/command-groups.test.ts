@@ -77,7 +77,7 @@ describe('command families', () => {
   it('preserves shared targets but does not carry sensitive or incompatible values', () => {
     expect(sharedActionParams(find('system.port'), find('system.port.stop'), { port: '4321' })).toEqual({ port: '4321' })
     expect(sharedActionParams(find('permissions.inspect'), find('permissions.chmod'), { target: 'a file.txt' })).toEqual({ target: 'a file.txt' })
-    expect(sharedActionParams(find('git.config.set'), find('git.config.set'), { key: 'user.name', scope: 'local', value: 'private' })).toEqual({ key: 'user.name', scope: 'local' })
+    expect(sharedActionParams(find('git.config.set'), find('git.config.set'), { key: 'user.name', scope: 'local', value: 'private' })).toEqual({ key: 'user.name', scope: 'local', value: 'private' })
     expect(sharedActionParams(find('files.create'), find('files.mkdir'), { targetPath: 'new-file.txt' })).toEqual({})
     expect(sharedActionParams(find('files.create'), find('files.mkdir'), { targetPath: 'custom-folder' })).toEqual({ targetPath: 'custom-folder' })
   })

@@ -3,9 +3,9 @@ import { hasControlCharacters } from './text'
 import type { ApiResult } from './contracts'
 import type { TerminalSession } from './runtime'
 const safe = (max: number) => z.string().max(max).refine((value) => !hasControlCharacters(value))
-export const sshAgentLifetimes = ['600', '3600', '28800', '86400', 'unlimited'] as const
+export const sshAgentLifetimes = ['unlimited', '86400', '28800', '3600', '600'] as const
 export type SshAgentLifetime = typeof sshAgentLifetimes[number]
-export const sshAgentLifetimeLabels: Record<SshAgentLifetime, string> = { '600': '10 minutes', '3600': '1 hour', '28800': '8 hours', '86400': '24 hours', unlimited: 'No time limit' }
+export const sshAgentLifetimeLabels: Record<SshAgentLifetime, string> = { unlimited: 'No time limit', '86400': '24 hours', '28800': '8 hours', '3600': '1 hour', '600': '10 minutes' }
 export const sshKeyTypes = ['ed25519', 'rsa'] as const
 export type SshKeyType = typeof sshKeyTypes[number]
 export const sshName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/)
@@ -13,6 +13,7 @@ const hostFields = { alias: sshName, hostName: z.string().regex(/^(?:[A-Za-z0-9]
 export const sshActionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('key.generate'), keyType: z.enum(sshKeyTypes).optional(), name: sshName, comment: safe(120) }).strict(),
   z.object({ kind: z.literal('key.comment'), publicKeyName: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\.pub$/), fingerprint: z.string().regex(/^SHA256:[A-Za-z0-9+/]+$/), comment: safe(120) }).strict(),
+  z.object({ kind: z.literal('key.delete'), publicKeyName: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\.pub$/), fingerprint: z.string().regex(/^SHA256:[A-Za-z0-9+/]+$/) }).strict(),
   z.object({ kind: z.literal('agent.add'), publicKeyName: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\.pub$/), fingerprint: z.string().regex(/^SHA256:[A-Za-z0-9+/]+$/), lifetimeSeconds: z.enum(sshAgentLifetimes).optional() }).strict(),
   z.object({ kind: z.literal('agent.remove'), publicKeyName: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\.pub$/), fingerprint: z.string().regex(/^SHA256:[A-Za-z0-9+/]+$/) }).strict(),
   z.object({ kind: z.literal('agent.clear') }).strict(),
@@ -25,7 +26,7 @@ export interface SshKey { name: string; type: string; fingerprint: string; comme
 export interface SshHost { alias: string; hostName: string; user: string; port: number; identityName: string; editable: boolean; reason?: string }
 export interface SshSnapshot { directory: string; revision: string; keys: SshKey[]; hosts: SshHost[]; agent: { available: boolean; message: string; identities: string[] }; tools: Record<'ssh' | 'ssh-keygen' | 'ssh-add', boolean>; writable: boolean; notices: string[] }
 export interface SshPreview { token: string; expiresAt: string; display: string; consequences: string[] }
-export type SshResult = { kind: 'terminal'; session: TerminalSession } | { kind: 'config'; backupPath?: string } | { kind: 'execution'; executionId: string }
+export type SshResult = { kind: 'terminal'; session: TerminalSession } | { kind: 'config'; backupPath?: string } | { kind: 'execution'; executionId: string } | { kind: 'deleted' }
 export interface DockerContainer { id: string; name: string; image: string; state: string; status: string; ports: string }
 export interface DockerImage { id: string; repository: string; tag: string; size: string }
 export interface DockerVolume { name: string; driver: string }

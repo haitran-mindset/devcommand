@@ -26,7 +26,7 @@ export function GitConfigPanel({ entries, onEdit }: { entries: GitConfig[]; onEd
         <td><span className={`git-config-effective${entry.effective ? '' : ' is-unset'}`} title={entry.effective?.value}>{entry.effective ? entry.effective.value || 'Empty value' : 'Not set'}</span>{entry.effective && <div className="git-config-source"><span>{entry.effective.scope}</span><code title={entry.effective.origin}>{entry.effective.origin}</code></div>}</td>
       </tr>)}</tbody></table></div>
     </section>)}
-    <p className="git-config-privacy"><ShieldCheck />Supported settings only. Config values are omitted from execution history.</p>
+    <p className="git-config-privacy"><ShieldCheck />Supported settings only. Review changes before applying.</p>
   </div>
 }
 

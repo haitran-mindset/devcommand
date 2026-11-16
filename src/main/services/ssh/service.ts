@@ -1,4 +1,4 @@
-import { readdirSync, lstatSync } from 'node:fs'
+import { readdirSync, lstatSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir, userInfo } from 'node:os'
 import { sshAgentLifetimeLabels, sshActionSchema, type SshAction, type SshKeyType, type SshHost, type SshKey, type SshPreview, type SshResult, type SshSnapshot } from '../../../shared/extended'
@@ -115,15 +115,32 @@ export class SshService {
       display = displayCommand('ssh-keygen', argv)
       targetState = JSON.stringify([key.fingerprint, metadata(path), metadata(join(this.directory, action.publicKeyName))])
       consequences.push(action.comment ? `Updates the comment for ${action.publicKeyName} to "${action.comment}".` : `Removes the comment for ${action.publicKeyName}.`, 'Changes the comment in both the private and public key files in your SSH directory. Existing key pairs, fingerprints and passphrases are preserved.', 'Enter any passphrase in the terminal if the key is encrypted.')
+    } else if (action.kind === 'key.delete') {
+      if (process.platform === 'win32') throw new PublicError('SSH key deletion awaits Windows permission/ACL validation.')
+      const key = await this.key(action.publicKeyName)
+      if (key.fingerprint !== action.fingerprint) throw new PublicError('The key changed or no longer exists. Refresh and check the keys list.')
+      const baseName = action.publicKeyName.slice(0, -4)
+      const privPath = join(this.directory, baseName)
+      const pubPath = join(this.directory, action.publicKeyName)
+      const privMeta = metadata(privPath)
+      targetState = JSON.stringify([key.fingerprint, privMeta, metadata(pubPath)])
+      display = displayCommand('rm', privMeta !== 'missing' ? [privPath, pubPath] : [pubPath])
+      consequences.push(
+        privMeta !== 'missing'
+          ? `Permanently deletes both private key "${baseName}" and public key "${action.publicKeyName}" from ${this.directory}.`
+          : `Permanently deletes public key "${action.publicKeyName}" from ${this.directory}.`,
+        'If this identity is currently loaded in the SSH Agent, it will also be unloaded.',
+        'This action is irreversible. Servers or repositories configured with this key will reject connections.'
+      )
     } else if (action.kind === 'agent.add') {
       const key = await this.key(action.publicKeyName)
       if (key.fingerprint !== action.fingerprint || !key.privateAvailable) throw new PublicError('The key changed, its private pair is missing/symlinked, or its permissions are unsafe. Refresh and check it before loading.')
       executable = findExecutable('ssh-add'); if (!executable) throw new PublicError('ssh-add is unavailable.')
       const path = join(this.directory, action.publicKeyName.slice(0, -4))
-      argv = action.lifetimeSeconds === 'unlimited' ? [path] : ['-t', action.lifetimeSeconds ?? '3600', path]; display = displayCommand('ssh-add', argv)
+      argv = !action.lifetimeSeconds || action.lifetimeSeconds === 'unlimited' ? [path] : ['-t', action.lifetimeSeconds, path]; display = displayCommand('ssh-add', argv)
       const agent = await this.agentState()
       targetState = JSON.stringify([key.fingerprint, metadata(path), agent.state])
-      consequences.push(action.lifetimeSeconds === 'unlimited' ? 'Loads this key without an explicit expiry. It stays until removed or the agent restarts; an agent-wide default lifetime may still apply.' : `Loads this key into the OS agent for ${sshAgentLifetimeLabels[action.lifetimeSeconds ?? '3600']}. An existing agent must be available.`, 'Enter any passphrase in the terminal. The application never reads the private key file content or saves the passphrase.')
+      consequences.push(!action.lifetimeSeconds || action.lifetimeSeconds === 'unlimited' ? 'Loads this key without an explicit expiry. It stays until removed or the agent restarts; an agent-wide default lifetime may still apply.' : `Loads this key into the OS agent for ${sshAgentLifetimeLabels[action.lifetimeSeconds]}. An existing agent must be available.`, 'Enter any passphrase in the terminal. The application never reads the private key file content or saves the passphrase.')
     } else if (action.kind === 'agent.remove' || action.kind === 'agent.clear') {
       executable = findExecutable('ssh-add'); if (!executable) throw new PublicError('ssh-add is unavailable.')
       const agent = await this.agentState()
@@ -164,6 +181,32 @@ export class SshService {
     const action = sshActionSchema.parse(input), expected = this.confirmations.take(token, action), prepared = await this.prepare(action)
     if (prepared.state !== expected) throw new PublicError('SSH metadata changed after preview. Review the action again.')
     if (prepared.nextText !== undefined) { const backupPath = writeConfig(this.directory, prepared.nextText, prepared.revision); this.changed(); return { kind: 'config', backupPath } }
+    if (action.kind === 'key.delete') {
+      const baseName = action.publicKeyName.slice(0, -4)
+      const pubPath = join(this.directory, action.publicKeyName)
+      const privPath = join(this.directory, baseName)
+      try {
+        const sshAdd = findExecutable('ssh-add')
+        if (sshAdd) {
+          const agent = await this.agentState()
+          if (agent.identities.some((line) => line.split(/\s+/).includes(action.fingerprint))) {
+            await this.probe(sshAdd, ['-d', pubPath], { cwd: this.directory })
+          }
+        }
+      } catch {
+        /* Best-effort agent cleanup */
+      }
+      if (metadata(pubPath) !== 'missing') {
+        const s = lstatSync(pubPath)
+        if (!s.isSymbolicLink() && s.isFile()) unlinkSync(pubPath)
+      }
+      if (metadata(privPath) !== 'missing') {
+        const s = lstatSync(privPath)
+        if (!s.isSymbolicLink() && s.isFile()) unlinkSync(privPath)
+      }
+      this.changed()
+      return { kind: 'deleted' }
+    }
     if (action.kind === 'connection.test') {
       const executionId = runner.execute({ commandId: 'ssh.connection.test', executable: prepared.executable!, argv: prepared.argv!, cwd: homedir(), preview: prepared.display, timeoutMs: 15000 })
       return { kind: 'execution', executionId }
@@ -175,7 +218,15 @@ export class SshService {
       this.generating.add(action.name)
     }
     try {
-      const session = terminals.startProgram({ executable: prepared.executable!, argv: prepared.argv!, cwd: action.kind === 'agent.clear' ? homedir() : this.directory, label: action.kind === 'key.generate' || action.kind === 'key.comment' ? 'ssh-keygen' : 'ssh-add', onClosed: () => { if (action.kind === 'key.generate') this.generating.delete(action.name); this.changed() } })
+      const session = terminals.startProgram({
+        executable: prepared.executable!,
+        argv: prepared.argv!,
+        cwd: action.kind === 'agent.clear' ? homedir() : this.directory,
+        label: action.kind === 'key.generate' || action.kind === 'key.comment' ? 'ssh-keygen' : 'ssh-add',
+        keepShell: true,
+        onClosed: () => { if (action.kind === 'key.generate') this.generating.delete(action.name); this.changed() }
+      })
+      if (action.kind === 'key.generate') setTimeout(() => this.generating.delete(action.name), 60000)
       return { kind: 'terminal', session }
     } catch { if (action.kind === 'key.generate') this.generating.delete(action.name); throw new PublicError('Unable to start the SSH terminal program. Check native terminal support and available tabs.') }
   }

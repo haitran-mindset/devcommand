@@ -159,18 +159,18 @@ describe('workspace and execution safety against real Git repositories', () => {
       expect(failures).toBeGreaterThan(0)
     } finally { await f.close() }
   })
-  it('never persists sensitive config values, and revalidates removed repositories', async () => {
+  it('previews and persists config values in history, and revalidates removed repositories', async () => {
     const f = fixture()
     try {
       const workspaceId = (await f.workspace.addDirectory(f.repo)).id
-      const request = { commandId: 'git.config.set', params: { scope: 'local', key: 'user.name', value: 'private-custom-value' }, workspaceId }
+      const request = { commandId: 'git.config.set', params: { scope: 'local', key: 'user.name', value: 'custom-config-value' }, workspaceId }
       const preview = await f.commands.preview(request)
-      expect(preview.display).not.toContain('private-custom-value')
+      expect(preview.display).toContain('custom-config-value')
       const { executionId } = await f.commands.execute(request, preview.confirmationToken)
       await finished(f.runner, executionId)
-      expect(f.git(['config', 'user.name'])).toBe('private-custom-value')
-      expect(JSON.stringify(f.commands.history())).not.toContain('private-custom-value')
-      expect(f.commands.history()[0].rerunnable).toBe(false)
+      expect(f.git(['config', 'user.name'])).toBe('custom-config-value')
+      expect(JSON.stringify(f.commands.history())).toContain('custom-config-value')
+      expect(f.commands.history()[0].rerunnable).toBe(true)
       f.store.removeWorkspace(workspaceId)
       await expect(f.commands.preview({ commandId: 'git.status', params: {}, workspaceId })).rejects.toThrow('workspace')
     } finally { await f.close() }

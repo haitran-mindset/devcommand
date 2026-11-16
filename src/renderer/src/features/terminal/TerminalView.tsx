@@ -48,17 +48,23 @@ export function TerminalView({ session, active }: { session: TerminalSession; ac
     const onExit = window.devcommand.terminal.onExit((event) => {
       if (event.sessionId !== session.id || disposed) return
       running = false
+      setError('')
       terminal.options.disableStdin = true
-      terminal.write(`\r\n[Session exited · code ${event.exitCode}]\r\n`)
+      terminal.write(
+        event.exitCode === 0
+          ? `\r\n[Session completed successfully · code 0]\r\n`
+          : `\r\n[Session exited · code ${event.exitCode}]\r\n`
+      )
     })
     const input = terminal.onData((data) => {
+      if (!running) return
       if (queued + data.length > 65536) { setError('Input is too large. Paste smaller blocks (maximum 64 KiB pending).'); return }
       queued += data.length
       writing = writing.then(async () => {
         try {
-          if (disposed) return
+          if (disposed || !running) return
           for (const chunk of textChunks(data, 16384)) unwrap(await window.devcommand.terminal.write(session.id, chunk))
-        } catch { if (!disposed) setError('Unable to write to this session. Close the tab and open a new terminal.') }
+        } catch { if (!disposed && running) setError('Unable to write to this session. Close the tab and open a new terminal.') }
         finally { queued -= data.length }
       })
     })
@@ -75,8 +81,8 @@ export function TerminalView({ session, active }: { session: TerminalSession; ac
         if (disposed || !running || !host.current?.offsetWidth || !host.current.offsetHeight) return
         fit.fit()
         void window.devcommand.terminal.resize(session.id, Math.min(500, terminal.cols), Math.min(200, terminal.rows))
-          .then((result) => { if (!result.ok && !disposed) setError('Session is no longer running. Close this tab and open another.') })
-          .catch(() => { if (!disposed) setError('Unable to resize terminal.') })
+          .then((result) => { if (!result.ok && !disposed && running) setError('Session is no longer running. Close this tab and open another.') })
+          .catch(() => { if (!disposed && running) setError('Unable to resize terminal.') })
       })
     }
     const resize = new ResizeObserver(fitTerminal)

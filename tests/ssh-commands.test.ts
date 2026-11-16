@@ -105,7 +105,7 @@ describe('SSH command library', () => {
     const load = { commandId: 'ssh.agent.add', params: { keyName: 'id_work' } }
     await f.service.preview(load)
     await f.service.launch(load, f.previewToken, f.terminals)
-    expect(f.sshExecute).toHaveBeenCalledWith({ kind: 'agent.add', publicKeyName: 'id_work.pub', fingerprint: 'SHA256:fixture', lifetimeSeconds: '3600' }, f.previewToken, f.terminals, expect.anything())
+    expect(f.sshExecute).toHaveBeenCalledWith({ kind: 'agent.add', publicKeyName: 'id_work.pub', fingerprint: 'SHA256:fixture', lifetimeSeconds: 'unlimited' }, f.previewToken, f.terminals, expect.anything())
     const comment = { commandId: 'ssh.key.comment', params: { keyName: 'id_work', comment: 'new@example.com' } }
     await f.service.preview(comment)
     await f.service.launch(comment, f.previewToken, f.terminals)
