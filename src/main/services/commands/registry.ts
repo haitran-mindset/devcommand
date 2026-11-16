@@ -115,6 +115,7 @@ pack('ssh.agent.start', 'Add SSH Key to New Agent', 'Start a new SSH agent and a
 pack('ssh.version', 'OpenSSH Version', 'Show the installed OpenSSH version', 'SSH', 'ssh', ['-V'], { supportedPlatforms: sshPlatforms })
 pack('ssh.help', 'OpenSSH Help', 'Show OpenSSH command-line usage', 'SSH', 'ssh', ['-h'], { supportedPlatforms: sshPlatforms, successExitCodes: [0, 255] })
 pack('ssh.key.generate', 'Generate SSH Key', 'Create an ed25519 or RSA 4096-bit key pair; enter the passphrase in the terminal', 'SSH', 'ssh-keygen', [], { parameters: [{ ...choice('keyType', 'Key type', [...sshKeyTypes], 'ed25519'), required: false }, name('keyName', 'Key Basename', 'id_ed25519_devcommand'), { key: 'comment', label: 'Public Comment', type: 'string', required: false, defaultValue: '' }], supportedPlatforms: sshPlatforms, mutation: true, risk: 'caution', interactive: true, aliases: ['ssh-keygen', 'generate key', 'tạo SSH key'] })
+pack('ssh.key.comment', 'Change SSH Key Comment', 'Update the comment or email on an existing SSH key pair without regenerating it', 'SSH', 'ssh-keygen', [], { parameters: [name('keyName', 'Key Basename', 'id_ed25519'), { key: 'comment', label: 'New Public Comment / Email', type: 'string', required: false, defaultValue: '' }], supportedPlatforms: sshPlatforms, mutation: true, risk: 'caution', interactive: true, aliases: ['ssh-keygen -c', 'change ssh key comment', 'change ssh email', 'đổi email ssh key', 'đổi comment ssh'] })
 pack('ssh.key.fingerprint', 'Show SSH Fingerprint', 'Show the SHA256 fingerprint of a public key in your SSH directory', 'SSH', 'ssh-keygen', [], { parameters: [name('keyName', 'Key Basename', 'id_ed25519')], supportedPlatforms: sshPlatforms, aliases: ['ssh-keygen -lf', 'fingerprint'] })
 pack('ssh.agent.list', 'List SSH Agent Identities', 'List fingerprints in the current OS SSH agent', 'SSH', 'ssh-add', ['-l', '-E', 'sha256'], { supportedPlatforms: sshPlatforms, successExitCodes: [0, 1], aliases: ['ssh-add -l', 'agent keys'] })
 pack('ssh.agent.public', 'List SSH Agent Public Keys', 'List public keys currently loaded in the OS SSH agent', 'SSH', 'ssh-add', ['-L'], { supportedPlatforms: sshPlatforms, successExitCodes: [0, 1], aliases: ['ssh-add -L'] })
@@ -125,6 +126,7 @@ const sshExamples: Record<string, string[]> = {
   'ssh.key.list': ['ls -la ~/.ssh'],
   'ssh.agent.start': ['eval "$(ssh-agent -s)" && ssh-add ~/.ssh/id_ed25519'],
   'ssh.key.generate': ['ssh-keygen -t ed25519 -a 64 -C "work-key" -f ~/.ssh/id_ed25519_work'],
+  'ssh.key.comment': ['ssh-keygen -c -C "new@example.com" -f ~/.ssh/id_ed25519'],
   'ssh.key.fingerprint': ['ssh-keygen -E sha256 -lf ~/.ssh/id_ed25519.pub'],
   'ssh.agent.add': ['ssh-add ~/.ssh/id_ed25519', 'ssh-add -t 600 ~/.ssh/id_ed25519', 'ssh-add -t 3600 ~/.ssh/id_ed25519', 'ssh-add -t 28800 ~/.ssh/id_ed25519', 'ssh-add -t 86400 ~/.ssh/id_ed25519'],
   'ssh.agent.remove': ['ssh-add -d ~/.ssh/id_ed25519.pub'],

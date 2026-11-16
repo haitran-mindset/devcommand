@@ -445,3 +445,22 @@ dialog.operation-form-dialog .git-row-actions { padding: 14px 24px; border-top: 
 .comparison-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .comparison-file-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .comparison-file-row > input { min-width: 0; flex: 1; }
+
+/* SSH Key Comment Modal & Inline Edit */
+.ssh-key-comment-row { display: flex; align-items: center; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
+.ssh-key-comment-row .ssh-key-comment { margin-top: 0; }
+.ssh-key-comment.is-empty { font-style: italic; opacity: 0.65; }
+.ssh-key-comment-edit-inline { display: inline-flex; align-items: center; justify-content: center; padding: 2px; background: transparent; border: none; border-radius: 4px; color: var(--muted-foreground); cursor: pointer; opacity: 0.7; transition: opacity 0.15s, color 0.15s, background-color 0.15s; }
+.ssh-key-comment-edit-inline:hover { opacity: 1; color: var(--purple); background: color-mix(in srgb, var(--purple) 15%, transparent); }
+.ssh-comment-form-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.ssh-comment-form-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; color: var(--purple); background: color-mix(in srgb, var(--purple) 12%, var(--card)); flex-shrink: 0; }
+.ssh-comment-form-icon svg { width: 18px; height: 18px; }
+.ssh-comment-form-header h2 { font-size: 15px; font-weight: 600; color: var(--foreground); margin: 0; }
+.ssh-comment-form-header p { font-size: 12px; color: var(--muted-foreground); margin: 3px 0 0; }
+.ssh-comment-form-header code { color: var(--foreground); font-size: 11px; }
+.ssh-comment-form-target { padding: 10px 14px; border-radius: 8px; background: color-mix(in srgb, var(--muted) 40%, var(--card)); border: 1px solid var(--border); margin-bottom: 16px; }
+.ssh-comment-form-meta { display: flex; align-items: center; gap: 8px; }
+.ssh-comment-form-keyname { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--foreground); }
+.ssh-comment-form-note { display: flex; align-items: flex-start; gap: 8px; margin-top: 14px; font-size: 11px; color: var(--muted-foreground); line-height: 1.4; }
+.ssh-comment-form-note svg { width: 14px; height: 14px; color: var(--green); flex-shrink: 0; margin-top: 1px; }
+

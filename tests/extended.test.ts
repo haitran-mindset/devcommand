@@ -95,6 +95,17 @@ describe('SSH confirmed actions', () => {
     await service.execute(action, preview.token, f.terminals, f.runner)
     expect((f.startProgram.mock.calls[0] as unknown as [{ argv: string[] }])[0].argv).toEqual(['-t', '3600', join(dir, 'id_one')])
   })
+  it('updates key comment in place without regenerating keys and rejects unsafe comments', async () => {
+    const dir = directory(); writeFileSync(join(dir, 'id_one'), 'PRIVATE SECRET SENTINEL', { mode: 0o600 }); writeFileSync(join(dir, 'id_one.pub'), 'ssh-ed25519 AAAAFixture public comment\n')
+    const service = new SshService(probe, dir), snapshot = await service.snapshot()
+    const action = { kind: 'key.comment' as const, publicKeyName: 'id_one.pub', fingerprint: snapshot.keys[0].fingerprint, comment: 'new@example.com' }
+    const f = execution(), preview = await service.preview(action)
+    expect(preview.display).toContain('ssh-keygen -c -C new@example.com -f')
+    expect(preview.consequences.join(' ')).toContain('new@example.com')
+    await service.execute(action, preview.token, f.terminals, f.runner)
+    expect((f.startProgram.mock.calls[0] as unknown as [{ argv: string[] }])[0].argv).toEqual(['-c', '-C', 'new@example.com', '-f', join(dir, 'id_one')])
+    await expect(service.preview({ ...action, comment: 'ghp_secretTokenValue123' })).rejects.toThrow('credentials or tokens')
+  })
   it('bypasses executable SSH config, quotes paths with spaces and enforces strict checking without prompting', async () => {
     const dir = directory(); writeFileSync(join(dir, 'config'), 'Host work\n HostName git.example.invalid\n User git\n ProxyCommand sh -c evil\n LocalCommand evil\n')
     const service = new SshService(probe, dir), f = execution(), action = { kind: 'connection.test' as const, alias: 'work', revision: (await service.snapshot()).revision }, preview = await service.preview(action)

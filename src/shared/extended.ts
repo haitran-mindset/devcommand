@@ -12,6 +12,7 @@ export const sshName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/)
 const hostFields = { alias: sshName, hostName: z.string().regex(/^(?:[A-Za-z0-9][A-Za-z0-9.-]{0,252}|[a-fA-F0-9:]+)$/), user: z.string().regex(/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$/), port: z.number().int().min(1).max(65535), identityName: z.union([sshName, z.literal('')]), revision: z.string().regex(/^[a-f0-9]{64}$/) }
 export const sshActionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('key.generate'), keyType: z.enum(sshKeyTypes).optional(), name: sshName, comment: safe(120) }).strict(),
+  z.object({ kind: z.literal('key.comment'), publicKeyName: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\.pub$/), fingerprint: z.string().regex(/^SHA256:[A-Za-z0-9+/]+$/), comment: safe(120) }).strict(),
   z.object({ kind: z.literal('agent.add'), publicKeyName: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\.pub$/), fingerprint: z.string().regex(/^SHA256:[A-Za-z0-9+/]+$/), lifetimeSeconds: z.enum(sshAgentLifetimes).optional() }).strict(),
   z.object({ kind: z.literal('agent.remove'), publicKeyName: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\.pub$/), fingerprint: z.string().regex(/^SHA256:[A-Za-z0-9+/]+$/) }).strict(),
   z.object({ kind: z.literal('agent.clear') }).strict(),

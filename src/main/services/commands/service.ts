@@ -81,11 +81,11 @@ export class CommandService {
     if (definition.category === 'Permissions' && repository?.bare) throw new PublicError('Choose a working-tree repository for permissions commands.')
     const executable = findExecutable(definition.executable)
     if (!executable) throw new PublicError(`${definition.executable} is not installed or absent from the application PATH.`)
-    if (definition.id === 'ssh.key.generate' || ['ssh.agent.add', 'ssh.agent.remove', 'ssh.agent.clear'].includes(definition.id)) {
+    if (definition.id === 'ssh.key.generate' || definition.id === 'ssh.key.comment' || ['ssh.agent.add', 'ssh.agent.remove', 'ssh.agent.clear'].includes(definition.id)) {
       const action = await this.sshAction(request)
       const preview = await this.ssh!.preview(action)
       const path = params.keyName ? join(this.ssh!.directory, params.keyName) : this.ssh!.directory
-      const argv = action.kind === 'key.generate' ? keyGenerationArguments(action.keyType ?? 'ed25519', action.comment, path) : action.kind === 'agent.add' ? (action.lifetimeSeconds === 'unlimited' ? [path] : ['-t', action.lifetimeSeconds ?? '3600', path]) : action.kind === 'agent.remove' ? ['-d', join(this.ssh!.directory, action.publicKeyName)] : ['-D']
+      const argv = action.kind === 'key.generate' ? keyGenerationArguments(action.keyType ?? 'ed25519', action.comment, path) : action.kind === 'key.comment' ? ['-c', '-C', action.comment, '-f', path] : action.kind === 'agent.add' ? (action.lifetimeSeconds === 'unlimited' ? [path] : ['-t', action.lifetimeSeconds ?? '3600', path]) : action.kind === 'agent.remove' ? ['-d', join(this.ssh!.directory, action.publicKeyName)] : ['-D']
       return { definition, request, process: { commandId: definition.id, executable, argv, cwd: action.kind === 'agent.clear' ? homedir() : this.ssh!.directory, preview: preview.display }, preview: { display: preview.display, cwd: action.kind === 'agent.clear' ? homedir() : this.ssh!.directory, risk: definition.risk, consequences: preview.consequences }, binding: '', ssh: { action, token: preview.token, expiresAt: preview.expiresAt } }
     }
     let initialCommand: string | undefined
@@ -269,7 +269,7 @@ export class CommandService {
   }
   async preview(request: CommandRequest): Promise<CommandPreview> {
     const parsed = commandRequestSchema.parse(request)
-    if (parsed.commandId === 'ssh.key.generate' || ['ssh.agent.add', 'ssh.agent.remove', 'ssh.agent.clear'].includes(parsed.commandId)) {
+    if (parsed.commandId === 'ssh.key.generate' || parsed.commandId === 'ssh.key.comment' || ['ssh.agent.add', 'ssh.agent.remove', 'ssh.agent.clear'].includes(parsed.commandId)) {
       const prepared = await this.prepare(parsed)
       return { ...prepared.preview, confirmationToken: prepared.ssh!.token, expiresAt: prepared.ssh!.expiresAt }
     }
@@ -325,6 +325,12 @@ export class CommandService {
     if (!this.ssh) throw new PublicError('SSH metadata is unavailable. Restart DevCommand.')
     if (request.commandId === 'ssh.key.generate') return { kind: 'key.generate', name: params.keyName, comment: params.comment, ...(params.keyType === 'rsa' ? { keyType: 'rsa' as const } : {}) }
     if (request.commandId === 'ssh.agent.clear') return { kind: 'agent.clear' }
+    if (request.commandId === 'ssh.key.comment') {
+      const snapshot = await this.ssh.snapshot()
+      const key = snapshot.keys.find((k) => k.name === params.keyName + '.pub' || k.name === params.keyName)
+      if (!key) throw new PublicError('This public key is unavailable. Refresh SSH Manager and check the key basename.')
+      return { kind: 'key.comment', publicKeyName: key.name, fingerprint: key.fingerprint, comment: params.comment }
+    }
     if (!['ssh.agent.add', 'ssh.agent.remove'].includes(request.commandId)) throw new PublicError('Unsupported SSH key action.')
     const snapshot = await this.ssh.snapshot()
     const key = snapshot.keys.find((key) => key.name === params.keyName + '.pub')
@@ -332,7 +338,7 @@ export class CommandService {
     return request.commandId === 'ssh.agent.remove' ? { kind: 'agent.remove', publicKeyName: key.name, fingerprint: key.fingerprint } : { kind: 'agent.add', publicKeyName: key.name, fingerprint: key.fingerprint, lifetimeSeconds: params.lifetimeSeconds as SshAgentLifetime }
   }
   async launch(request: CommandRequest, token: string, terminals: TerminalManager) {
-    if (request.commandId === 'ssh.key.generate' || ['ssh.agent.add', 'ssh.agent.remove', 'ssh.agent.clear'].includes(request.commandId)) {
+    if (request.commandId === 'ssh.key.generate' || request.commandId === 'ssh.key.comment' || ['ssh.agent.add', 'ssh.agent.remove', 'ssh.agent.clear'].includes(request.commandId)) {
       const action = await this.sshAction(request)
       const result = await this.ssh!.execute(action, token, terminals, this.runner)
       if (result.kind !== 'terminal') throw new PublicError('Unable to open the SSH terminal action.')

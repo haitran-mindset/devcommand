@@ -29,10 +29,10 @@ function fixture() {
   return { service, terminals, startProgram, sshExecute, sshPreview, publicKey, status, previewToken }
 }
 describe('SSH command library', () => {
-  it('groups fourteen actions into SSH, SSH Keys and SSH Agent', () => {
+  it('groups fifteen actions into SSH, SSH Keys and SSH Agent', () => {
     const entries = registry.filter((entry) => entry.category === 'SSH').map((entry) => ({ ...entry, favorite: false }))
-    expect(entries).toHaveLength(14)
-    expect(groupCommands(entries).map((group) => [group.title, group.commands.length])).toEqual([['SSH', 5], ['SSH Keys', 3], ['SSH Agent', 6]])
+    expect(entries).toHaveLength(15)
+    expect(groupCommands(entries).map((group) => [group.title, group.commands.length])).toEqual([['SSH', 5], ['SSH Keys', 4], ['SSH Agent', 6]])
   })
   it('keeps key listing, agent startup and GitHub authentication independent', async () => {
     const f = fixture()
@@ -106,6 +106,10 @@ describe('SSH command library', () => {
     await f.service.preview(load)
     await f.service.launch(load, f.previewToken, f.terminals)
     expect(f.sshExecute).toHaveBeenCalledWith({ kind: 'agent.add', publicKeyName: 'id_work.pub', fingerprint: 'SHA256:fixture', lifetimeSeconds: '3600' }, f.previewToken, f.terminals, expect.anything())
+    const comment = { commandId: 'ssh.key.comment', params: { keyName: 'id_work', comment: 'new@example.com' } }
+    await f.service.preview(comment)
+    await f.service.launch(comment, f.previewToken, f.terminals)
+    expect(f.sshExecute).toHaveBeenCalledWith({ kind: 'key.comment', publicKeyName: 'id_work.pub', fingerprint: 'SHA256:fixture', comment: 'new@example.com' }, f.previewToken, f.terminals, expect.anything())
     expect(f.startProgram).not.toHaveBeenCalled()
   })
   it('passes the selected RSA type through library preview and terminal launch', async () => {

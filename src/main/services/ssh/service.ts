@@ -104,6 +104,17 @@ export class SshService {
       display = displayCommand('ssh-keygen', argv)
       targetState = [metadata(path), metadata(path + '.pub')].join('|')
       consequences.push(`Creates a new ${action.keyType === 'rsa' ? 'RSA 4096-bit' : 'ed25519'} key pair in your OS SSH directory. Existing keys will not be replaced automatically.`, 'The terminal will ask for a passphrase interactively. DevCommand never places it in argv, logs or its database.')
+    } else if (action.kind === 'key.comment') {
+      if (process.platform === 'win32') throw new PublicError('SSH key modification awaits Windows permission/ACL validation.')
+      const key = await this.key(action.publicKeyName)
+      if (key.fingerprint !== action.fingerprint || !key.privateAvailable) throw new PublicError('The key changed, its private pair is missing/symlinked, or its permissions are unsafe. Check the key before updating.')
+      if (redact(action.comment) !== action.comment) throw new PublicError('Do not put credentials or tokens in the public key comment.')
+      executable = findExecutable('ssh-keygen'); if (!executable) throw new PublicError('Install OpenSSH ssh-keygen and refresh.')
+      const path = join(this.directory, action.publicKeyName.slice(0, -4))
+      argv = ['-c', '-C', action.comment, '-f', path]
+      display = displayCommand('ssh-keygen', argv)
+      targetState = JSON.stringify([key.fingerprint, metadata(path), metadata(join(this.directory, action.publicKeyName))])
+      consequences.push(action.comment ? `Updates the comment for ${action.publicKeyName} to "${action.comment}".` : `Removes the comment for ${action.publicKeyName}.`, 'Changes the comment in both the private and public key files in your SSH directory. Existing key pairs, fingerprints and passphrases are preserved.', 'Enter any passphrase in the terminal if the key is encrypted.')
     } else if (action.kind === 'agent.add') {
       const key = await this.key(action.publicKeyName)
       if (key.fingerprint !== action.fingerprint || !key.privateAvailable) throw new PublicError('The key changed, its private pair is missing/symlinked, or its permissions are unsafe. Refresh and check it before loading.')
@@ -164,7 +175,7 @@ export class SshService {
       this.generating.add(action.name)
     }
     try {
-      const session = terminals.startProgram({ executable: prepared.executable!, argv: prepared.argv!, cwd: action.kind === 'agent.clear' ? homedir() : this.directory, label: action.kind === 'key.generate' ? 'ssh-keygen' : 'ssh-add', onClosed: () => { if (action.kind === 'key.generate') this.generating.delete(action.name); this.changed() } })
+      const session = terminals.startProgram({ executable: prepared.executable!, argv: prepared.argv!, cwd: action.kind === 'agent.clear' ? homedir() : this.directory, label: action.kind === 'key.generate' || action.kind === 'key.comment' ? 'ssh-keygen' : 'ssh-add', onClosed: () => { if (action.kind === 'key.generate') this.generating.delete(action.name); this.changed() } })
       return { kind: 'terminal', session }
     } catch { if (action.kind === 'key.generate') this.generating.delete(action.name); throw new PublicError('Unable to start the SSH terminal program. Check native terminal support and available tabs.') }
   }
