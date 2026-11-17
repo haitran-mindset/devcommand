@@ -16,8 +16,7 @@ export interface CommandGroup {
   commands: CommandSummary[]
 }
 const families: Family[] = [
-  { id: 'system.information', title: 'System Information', description: 'Inspect the current user, hostname, operating system, uptime and date', ids: ['system.whoami', 'system.hostname', 'system.uname', 'system.uptime', 'system.date'], defaultId: 'system.whoami' },
-  { id: 'system.tool-versions', title: 'Tool Versions', description: 'Check installed Python and Docker CLI versions', ids: ['python.version', 'docker.version'], defaultId: 'python.version' },
+  { id: 'system.information', title: 'System Information', description: 'Inspect the current user, hostname, operating system, uptime, date and Python version', ids: ['system.whoami', 'system.hostname', 'system.uname', 'system.uptime', 'system.date', 'python.version'], defaultId: 'system.whoami' },
   { id: 'compare', title: 'File Comparison', description: 'Compare text files or bytes without modifying either file', prefix: 'compare.', defaultId: 'compare.unified' },
   { id: 'files', title: 'File Operations', description: 'Create, copy, move, rename and remove files and directories', prefix: 'files.', defaultId: 'files.create' },
   { id: 'find', title: 'Find', description: 'Search files and directories by name, size or modification time', prefix: 'find.', defaultId: 'find.name' },
@@ -43,6 +42,12 @@ const families: Family[] = [
   { id: 'ssh.keys', title: 'SSH Keys', description: 'Generate keys, change comments and inspect fingerprints', prefix: 'ssh.key.', defaultId: 'ssh.key.generate' },
   { id: 'ssh.agent', title: 'SSH Agent', description: 'Inspect, load and remove agent identities', prefix: 'ssh.agent.', defaultId: 'ssh.agent.list' },
   ...(['codex', 'claude', 'gemini', 'antigravity'] as const).map((tool) => ({ id: `ai.${tool}`, title: { codex: 'Codex', claude: 'Claude Code', gemini: 'Gemini CLI', antigravity: 'Antigravity CLI' }[tool], description: 'Start, resume and inspect the developer CLI', prefix: `ai.${tool}.`, defaultId: `ai.${tool}.start` })),
+  { id: 'security', title: 'Security', description: 'Detect secrets and sensitive information with Gitleaks', prefix: 'gitleaks.', defaultId: 'gitleaks.staged' },
+  { id: 'docker.images', title: 'Docker Images', description: 'List, pull, build and remove Docker images', prefix: 'docker.image.', defaultId: 'docker.image.list' },
+  { id: 'docker.containers', title: 'Docker Containers', description: 'Inspect, run, start, stop and remove containers', prefix: 'docker.container.', defaultId: 'docker.container.ps' },
+  { id: 'docker.debug', title: 'Docker Debug', description: 'Stream container logs, access container shell and monitor stats', prefix: 'docker.debug.', defaultId: 'docker.debug.logs' },
+  { id: 'docker.compose', title: 'Docker Compose', description: 'Manage multi-container applications with Docker Compose', prefix: 'docker.compose.', defaultId: 'docker.compose.up' },
+  { id: 'docker.system', title: 'Docker System', description: 'Inspect disk usage, version and prune unused Docker resources', prefix: 'docker.system.', ids: ['docker.version'], defaultId: 'docker.system.df' },
 ]
 export function commandFamily(command: Pick<CommandSummary, 'id' | 'title' | 'description'>): Omit<CommandGroup, 'commands'> {
   const family = families.find((family) => family.ids?.includes(command.id) || (family.prefix && command.id.startsWith(family.prefix)))
@@ -78,9 +83,15 @@ const labels: Record<string, string> = {
   'node.version': 'Version', 'node.runtime': 'Runtime details', 'npm.version': 'Version', 'npm.dependencies': 'Dependencies', 'flutter.version': 'Version', 'flutter.doctor': 'Doctor', 'flutter.devices': 'Devices',
   'files.create': 'Create file', 'files.mkdir': 'Create directory', 'files.mkdir.parents': 'Create nested directory', 'files.copy': 'Copy file', 'files.dir.copy': 'Copy directory', 'files.move': 'Move file', 'files.dir.move': 'Move directory', 'files.rename': 'Rename file', 'files.dir.rename': 'Rename directory', 'files.delete': 'Delete file', 'files.rmdir': 'Remove empty directory',
   'find.name': 'By name', 'find.iname': 'By name (ignore case)', 'find.extension': 'By extension', 'find.directory': 'Directories', 'find.empty': 'Empty files or directories', 'find.size': 'Large files', 'find.modified': 'Recently modified',
-  'system.whoami': 'Current user', 'system.hostname': 'Hostname', 'system.uname': 'Operating system', 'system.uptime': 'Uptime', 'system.date': 'Date and time', 'python.version': 'Python version', 'docker.version': 'Docker CLI version',
+  'system.whoami': 'Current user', 'system.hostname': 'Hostname', 'system.uname': 'Operating system', 'system.uptime': 'Uptime', 'system.date': 'Date and time', 'python.version': 'Python version', 'docker.version': 'Version',
   'system.pwd': 'Working directory', 'system.list': 'List files', 'system.disk': 'Disk usage', 'system.ports': 'All TCP listeners', 'system.port': 'Inspect listening port', 'system.port.process': 'Find process', 'system.port.stop': 'Stop process',
   'permissions.inspect': 'Inspect permissions', 'permissions.chmod': 'Change permissions (chmod)', 'permissions.chown': 'Change owner (chown)', 'permissions.acl.view': 'View ACL', 'permissions.acl.add': 'Add entry', 'permissions.acl.remove': 'Remove entry', 'permissions.acl.clear': 'Clear ACL',
+  'gitleaks.staged': 'Scan staged changes', 'gitleaks.git': 'Scan git history', 'gitleaks.dir': 'Scan directory', 'gitleaks.version': 'Version',
+  'docker.image.list': 'List images', 'docker.image.pull': 'Pull image', 'docker.image.build': 'Build image', 'docker.image.remove': 'Remove image',
+  'docker.container.ps': 'Running containers', 'docker.container.psa': 'All containers', 'docker.container.run': 'Run (detached)', 'docker.container.start': 'Start container', 'docker.container.stop': 'Stop container', 'docker.container.restart': 'Restart container', 'docker.container.remove': 'Remove container',
+  'docker.debug.logs': 'Follow logs', 'docker.debug.exec': 'Shell access', 'docker.debug.stats': 'Resource stats',
+  'docker.compose.up': 'Compose up', 'docker.compose.build': 'Compose up with build', 'docker.compose.down': 'Compose down', 'docker.compose.logs': 'Follow compose logs',
+  'docker.system.df': 'Disk usage', 'docker.system.prune': 'Prune system',
 }
 export function actionLabel(command: CommandSummary): string {
   if (command.id.startsWith('ai.')) return ({ start: 'Start session', resume: 'Resume latest', help: 'Help', version: 'Version' } as Record<string, string>)[command.id.split('.').at(-1)!] ?? command.title

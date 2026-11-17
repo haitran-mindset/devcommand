@@ -19,6 +19,8 @@ import { fileOperation } from './files'
 import { permissionArguments, permissionTarget } from './permissions'
 import { inspectPortTarget } from './ports'
 import { findExecutable, type ProbeRun } from '../cli/probe'
+import { gitleaksArguments } from './gitleaks'
+import { gitleaksIgnoreLabels, type GitleaksIgnoreOption } from '../../../shared/extended'
 
 interface Prepared { definition: Definition; request: CommandRequest; process: ProcessDefinition; preview: CommandPreview; binding: string; initialCommand?: string; ssh?: { action: SshAction; token: string; expiresAt: string } }
 interface Confirmation { binding: string; state: string; expires: number }
@@ -180,11 +182,12 @@ export class CommandService {
     const portTarget = definition.id === 'system.port.stop' ? await inspectPortTarget(this.portProbe, params.port, params.pid) : undefined
     const findArgs = definition.id.startsWith('find.') ? expand(definition, params) : undefined
     if (findArgs && params.maxDepth !== 'all') findArgs.splice(2, 0, '-maxdepth', params.maxDepth)
-    const argv = sshDirectoryArgs ?? findArgs ?? files?.argv ?? zshSyntaxArgs ?? sshFingerprintArgs ?? (permission ? permissionArguments(definition, params, permission.target) : portTarget ? ['-TERM', portTarget.pid] : definition.id === 'git.unstage' && repository?.unborn ? ['rm', '--cached', '--force', '--', params.path] : definition.id === 'git.unstage' && originalPath ? ['restore', '--staged', '--', params.path, originalPath] : expand(definition, params))
+    const gitleaksArgs = definition.id.startsWith('gitleaks.') ? gitleaksArguments(expand(definition, params), params.ignore, params.customRules) : undefined
+    const argv = sshDirectoryArgs ?? findArgs ?? gitleaksArgs ?? files?.argv ?? zshSyntaxArgs ?? sshFingerprintArgs ?? (permission ? permissionArguments(definition, params, permission.target) : portTarget ? ['-TERM', portTarget.pid] : definition.id === 'git.unstage' && repository?.unborn ? ['rm', '--cached', '--force', '--', params.path] : definition.id === 'git.unstage' && originalPath ? ['restore', '--staged', '--', params.path, originalPath] : expand(definition, params))
     const executionArgs = definition.executable === 'git' && definition.requiresRepository ? [...gitSafetyArgs, ...argv] : argv
     const safeParams = { ...params }
     for (const parameter of definition.parameters) if (parameter.sensitive) safeParams[parameter.key] = '[REDACTED]'
-    const safeArgs = sshDirectoryArgs || findArgs || files || zshSyntaxArgs || sshFingerprintArgs || permission || portTarget ? argv : definition.executable === 'git' && definition.requiresRepository ? [...gitSafetyArgs, ...(definition.id === 'git.unstage' && (repository?.unborn || originalPath) ? argv : expand(definition, safeParams))] : expand(definition, safeParams)
+    const safeArgs = sshDirectoryArgs || findArgs || gitleaksArgs || files || zshSyntaxArgs || sshFingerprintArgs || permission || portTarget ? argv : definition.executable === 'git' && definition.requiresRepository ? [...gitSafetyArgs, ...(definition.id === 'git.unstage' && (repository?.unborn || originalPath) ? argv : expand(definition, safeParams))] : expand(definition, safeParams)
     const display = agentDisplay ?? initialCommand ?? redact(displayCommand(definition.executable, safeArgs))
     const consequences: string[] = []
     if (definition.id.startsWith('compare.')) consequences.push('Read-only comparison. Relative file paths start at the selected workspace or home directory; absolute paths are also supported. Symbolic links resolve to their regular-file targets.', 'Exit 0 means equal under the selected comparison rules; exit 1 means different. Both are successful comparisons. Higher exit codes indicate an error. An equal result usually has no output.', 'Diff output may contain file contents and is saved in Execution History. Large comparisons are subject to the managed execution timeout and output limits.')
@@ -215,6 +218,30 @@ export class CommandService {
       else if (definition.id === 'cloudflared.login') consequences.push('Opens Cloudflare authentication in your browser. cloudflared saves its account certificate in its own configuration directory.')
       else if (definition.id === 'cloudflared.create') consequences.push('Creates a tunnel in your Cloudflare account and writes its credentials to the cloudflared configuration directory.')
       else if (definition.network) consequences.push('Reads tunnel metadata from your Cloudflare account using your existing cloudflared credentials.')
+    }
+    else if (definition.id.startsWith('gitleaks.')) {
+      consequences.push(
+        'Scans for secrets, API tokens and credentials using Gitleaks.',
+        'Exits with code 0 if no secrets are found; exit 1 indicates secrets detected in the scanned scope.',
+        'Secrets are redacted from the output. Verbose output includes scan duration and statistics.'
+      )
+      if (params.ignore && params.ignore !== 'none') {
+        consequences.push(`Excludes files matching: ${gitleaksIgnoreLabels[params.ignore as GitleaksIgnoreOption] ?? params.ignore}.`)
+      }
+      if (params.customRules?.trim()) {
+        consequences.push('Applies custom rules/allowlists defined in TOML.')
+      }
+    }
+    else if (definition.category === 'Docker') {
+      consequences.push(
+        'Communicates with your local or configured Docker daemon.',
+        definition.mutation
+          ? 'Modifies Docker resources (containers, images or volumes) on the active Docker daemon.'
+          : 'Reads Docker daemon state without changing resources.'
+      )
+      if (definition.requiresRepository) {
+        consequences.push('Uses the selected workspace directory as the build context or Docker Compose project directory.')
+      }
     }
     else if (definition.interactive) consequences.push('Opens the installed AI CLI in an interactive terminal for the selected repository. It may read project instructions, contact its provider and edit files using its own permission settings.', 'No prompt is submitted by DevCommand. Session input/output is not saved in Execution History; the CLI manages its own session data.')
     else if (portTarget) consequences.push(`Send SIGTERM to PID ${portTarget.pid}, listening on TCP port ${params.port}.`, redact(`Process: ${portTarget.identity}`), 'Unsaved work in this process may be lost. SIGTERM requests a normal shutdown; it does not force-kill the process.')

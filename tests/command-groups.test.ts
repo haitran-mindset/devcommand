@@ -80,5 +80,36 @@ describe('command families', () => {
     expect(sharedActionParams(find('git.config.set'), find('git.config.set'), { key: 'user.name', scope: 'local', value: 'private' })).toEqual({ key: 'user.name', scope: 'local', value: 'private' })
     expect(sharedActionParams(find('files.create'), find('files.mkdir'), { targetPath: 'new-file.txt' })).toEqual({})
     expect(sharedActionParams(find('files.create'), find('files.mkdir'), { targetPath: 'custom-folder' })).toEqual({ targetPath: 'custom-folder' })
+    expect(sharedActionParams(find('gitleaks.staged'), find('gitleaks.git'), { ignore: 'tests' })).toEqual({ ignore: 'tests' })
+  })
+  it('groups all Gitleaks actions into one security family', () => {
+    const groups = groupCommands(catalog.filter((entry) => entry.id.startsWith('gitleaks.')))
+    expect(groups).toHaveLength(1)
+    expect(groups[0].title).toBe('Security')
+    expect(groups[0].commands).toHaveLength(4)
+    expect(defaultCommand(groups[0]).id).toBe('gitleaks.staged')
+    expect(groups[0].commands.map(actionLabel)).toContain('Scan staged changes')
+    expect(groups[0].commands.map(actionLabel)).toContain('Scan git history')
+  })
+  it('groups 21 Docker actions into 5 distinct categories', () => {
+    const dockerCommands = catalog.filter((entry) => entry.category === 'Docker')
+    expect(dockerCommands).toHaveLength(21)
+    const groups = groupCommands(dockerCommands)
+    expect(groups).toHaveLength(5)
+    expect(groups.map((g) => g.title).sort()).toEqual(['Docker Compose', 'Docker Containers', 'Docker Debug', 'Docker Images', 'Docker System'])
+    const imagesGroup = groups.find((g) => g.title === 'Docker Images')!
+    expect(imagesGroup.commands).toHaveLength(4)
+    expect(imagesGroup.commands.map(actionLabel)).toEqual(['List images', 'Pull image', 'Build image', 'Remove image'])
+    const containersGroup = groups.find((g) => g.title === 'Docker Containers')!
+    expect(containersGroup.commands).toHaveLength(7)
+    const debugGroup = groups.find((g) => g.title === 'Docker Debug')!
+    expect(debugGroup.commands).toHaveLength(3)
+    const composeGroup = groups.find((g) => g.title === 'Docker Compose')!
+    expect(composeGroup.commands).toHaveLength(4)
+    const systemGroup = groups.find((g) => g.title === 'Docker System')!
+    expect(systemGroup.commands).toHaveLength(3)
+    expect(systemGroup.commands.map(actionLabel)).toContain('Version')
+    const pythonGroup = groupCommands(catalog.filter((entry) => entry.id === 'python.version'))
+    expect(pythonGroup[0].title).toBe('System Information')
   })
 })

@@ -8,6 +8,14 @@ export type SshAgentLifetime = typeof sshAgentLifetimes[number]
 export const sshAgentLifetimeLabels: Record<SshAgentLifetime, string> = { unlimited: 'No time limit', '86400': '24 hours', '28800': '8 hours', '3600': '1 hour', '600': '10 minutes' }
 export const sshKeyTypes = ['ed25519', 'rsa'] as const
 export type SshKeyType = typeof sshKeyTypes[number]
+export const gitleaksIgnoreOptions = ['none', 'readme', 'tests', 'both'] as const
+export type GitleaksIgnoreOption = typeof gitleaksIgnoreOptions[number]
+export const gitleaksIgnoreLabels: Record<GitleaksIgnoreOption, string> = {
+  none: 'None (scan all files)',
+  readme: 'Skip README.md',
+  tests: 'Skip test files (*.test, *.spec, tests/)',
+  both: 'Skip README.md & test files',
+}
 export const sshName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/)
 const hostFields = { alias: sshName, hostName: z.string().regex(/^(?:[A-Za-z0-9][A-Za-z0-9.-]{0,252}|[a-fA-F0-9:]+)$/), user: z.string().regex(/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$/), port: z.number().int().min(1).max(65535), identityName: z.union([sshName, z.literal('')]), revision: z.string().regex(/^[a-f0-9]{64}$/) }
 export const sshActionSchema = z.discriminatedUnion('kind', [

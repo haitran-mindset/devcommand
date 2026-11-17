@@ -1,4 +1,4 @@
-import { Files, Folder, Search, Archive, Cloud, Bot, KeyRound, ShieldCheck, CirclePlus, Code2, FileDiff, GitBranch, GitCommitHorizontal, List, RefreshCw, Settings, SquarePen, Terminal, Trash2 } from 'lucide-react'
+import { Container, Files, Folder, Search, Archive, Cloud, Bot, KeyRound, ShieldCheck, CirclePlus, Code2, FileDiff, GitBranch, GitCommitHorizontal, List, RefreshCw, Settings, SquarePen, Terminal, Trash2 } from 'lucide-react'
 
 export function CommandIcon({ id }: { id: string }) {
   const Icon = id.startsWith('compare.') ? FileDiff
@@ -8,7 +8,8 @@ export function CommandIcon({ id }: { id: string }) {
     : id.startsWith('zsh.') ? Terminal
     : id.startsWith('cloudflared.') || id.startsWith('ngrok.') ? Cloud
     : id.startsWith('ssh.') ? KeyRound
-    : id.startsWith('permissions.') ? ShieldCheck
+    : id.startsWith('permissions.') || id.startsWith('gitleaks.') ? ShieldCheck
+    : id.startsWith('docker.') ? Container
     : id.startsWith('ai.') ? Bot
     : id.includes('remove') || id.includes('delete') || id.includes('drop') ? Trash2
     : id.includes('set-url') || id.includes('fetch') ? RefreshCw
